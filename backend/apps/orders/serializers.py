@@ -29,6 +29,11 @@ class OrderSerializer(serializers.ModelSerializer):
         return obj.buyer.full_name
 
 
+class OrderStatusUpdateSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=['confirmed', 'dispatched', 'delivered'], required=False)
+    payment_status = serializers.ChoiceField(choices=['pending', 'completed'], required=False)
+
+
 class SavedProductSerializer(serializers.ModelSerializer):
     listing_detail = ProductListingSerializer(source='listing', read_only=True)
 

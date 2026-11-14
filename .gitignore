@@ -1,0 +1,27 @@
+# Python & Environments
+venv/
+env/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Django artifacts & database
+db.sqlite3
+*.sqlite3
+media/
+backend/media/
+staticfiles/
+*.log
+
+# Sensitive environment configuration
+.env
+backend/.env
+
+# Temporary zip files
+*.zip
+agri.zip

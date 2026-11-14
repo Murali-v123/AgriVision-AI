@@ -124,38 +124,29 @@ class ProductListCreateView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-def resolve_listing(pk):
+import uuid
+
+def resolve_listing(listing_id_str):
+    if not listing_id_str:
+        return None
+    listing_id_str = str(listing_id_str).strip()
     try:
-        return ProductListing.objects.select_related('farmer', 'farmer__farmer_profile').get(id=pk)
-    except Exception:
+        val = uuid.UUID(listing_id_str)
+        l = ProductListing.objects.filter(id=val).first()
+        if l:
+            return l
+    except (ValueError, AttributeError):
         pass
-    demo_map = {
-        'l1': ('ramesh@demo.in', 'Hybrid Tomato'),
-        'l2': ('ramesh@demo.in', 'Desi Onion'),
-        'l3': ('lakshmi@demo.in', 'Organic Tomato'),
-        'l4': ('lakshmi@demo.in', 'Kufri Potato'),
-        'l5': ('suresh@demo.in', 'Round Tomato'),
-        'l6': ('suresh@demo.in', 'Red Onion'),
-        'l7': ('anitha@demo.in', 'Cherry Tomato'),
-        'l8': ('anitha@demo.in', 'Agria Potato'),
-        'l9': ('mahesh@demo.in', 'Local Tomato'),
-        'l10': ('mahesh@demo.in', 'Bellary Onion'),
-        'l11': ('venkat@demo.in', 'Hybrid Tomato'),
-        'l12': ('venkat@demo.in', 'Kufri Jyoti Potato'),
-        'l13': ('pushpa@demo.in', 'Country Tomato'),
-        'l14': ('pushpa@demo.in', 'Nasik Onion'),
-        'l15': ('basava@demo.in', 'Plum Tomato'),
-        'l16': ('basava@demo.in', 'Chips Grade Potato'),
-        'l17': ('savitha@demo.in', 'Sun Ripe Tomato'),
-        'l18': ('savitha@demo.in', 'Small Onion'),
-        'l19': ('ravi@demo.in', 'Bulk Tomato'),
-        'l20': ('ravi@demo.in', 'Bulk Potato'),
-    }
-    key = str(pk).lower()
-    if key in demo_map:
-        email, name = demo_map[key]
-        return ProductListing.objects.select_related('farmer', 'farmer__farmer_profile').filter(farmer__email=email, product_name=name).first()
-    return None
+
+    if listing_id_str.lower().startswith('l') and listing_id_str[1:].isdigit():
+        idx = int(listing_id_str[1:]) - 1
+        listings = list(ProductListing.objects.all().order_by('created_at'))
+        if 0 <= idx < len(listings):
+            return listings[idx]
+        elif listings:
+            return listings[idx % len(listings)]
+
+    return ProductListing.objects.first()
 
 
 class ProductDetailView(APIView):

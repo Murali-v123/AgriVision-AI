@@ -33,10 +33,8 @@ class RegisterView(APIView):
             profile_serializer = UserProfileSerializer(user)
             return Response({
                 'message': 'Registration successful',
-                'access': tokens['access'],
-                'refresh': tokens['refresh'],
-                'tokens': tokens,
                 'user': profile_serializer.data,
+                'tokens': tokens,
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -52,10 +50,8 @@ class LoginView(APIView):
             profile_serializer = UserProfileSerializer(user)
             return Response({
                 'message': 'Login successful',
-                'access': tokens['access'],
-                'refresh': tokens['refresh'],
-                'tokens': tokens,
                 'user': profile_serializer.data,
+                'tokens': tokens,
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_401_UNAUTHORIZED)
 

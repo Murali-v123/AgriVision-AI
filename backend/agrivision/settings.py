@@ -123,3 +123,7 @@ SIMPLE_JWT = {
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
 }
+
+# AgriVision ML Service Integration
+ML_API_URL = os.environ.get('ML_API_URL', 'http://127.0.0.1:5000')
+

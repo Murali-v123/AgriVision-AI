@@ -1,0 +1,158 @@
+{
+  "project": "AgriVision AI - Agricultural Price Intelligence & Demand Forecasting",
+  "team_role": "Member 2 - AI & Data Science",
+  "hackathon": "Build Beyond'26 - BMS College of Engineering",
+  "dataset_metadata": {
+    "crop": "Tomato",
+    "region": "Karnataka, India",
+    "records_count": 4386,
+    "source": "SYNTHETIC DEMO DATA (Karnataka APMC Simulation for Hackathon)",
+    "is_synthetic": true,
+    "saved_at": "2026-11-14T12:52:51.380892",
+    "columns": [
+      "date",
+      "state",
+      "district",
+      "market",
+      "commodity",
+      "variety",
+      "arrivals_qtl",
+      "min_price",
+      "max_price",
+      "modal_price",
+      "price_unit",
+      "data_source",
+      "is_synthetic"
+    ],
+    "markets": [
+      "Bangalore",
+      "Belagavi",
+      "Chikkaballapur",
+      "Kolar",
+      "Mysuru",
+      "Ramanagara"
+    ],
+    "initial_rows": 4386,
+    "duplicates_removed": 0,
+    "nulls_handled": 0,
+    "invalid_prices_removed": 0,
+    "outliers_adjusted": 0,
+    "final_rows": 4386,
+    "markets_count": 6,
+    "date_min": "2024-01-01",
+    "date_max": "2025-12-31",
+    "mean_modal_price": 1757.26,
+    "median_modal_price": 1947.58
+  },
+  "price_prediction_evaluation": {
+    "best_model": "GradientBoosting",
+    "validation_metrics": {
+      "MAE": 156.42,
+      "RMSE": 195.3,
+      "MAPE_pct": 6.38,
+      "R2": 0.4357
+    },
+    "test_metrics": {
+      "MAE": 88.09,
+      "RMSE": 122.08,
+      "MAPE_pct": 8.18,
+      "R2": 0.9499
+    },
+    "residual_std": 195.14,
+    "all_models": {
+      "Baseline": {
+        "val": {
+          "MAE": 159.0,
+          "RMSE": 200.96,
+          "MAPE_pct": 6.52,
+          "R2": 0.4026
+        },
+        "test": {
+          "MAE": 127.56,
+          "RMSE": 168.82,
+          "MAPE_pct": 12.36,
+          "R2": 0.9041
+        }
+      },
+      "RandomForest": {
+        "val": {
+          "MAE": 157.05,
+          "RMSE": 195.3,
+          "MAPE_pct": 6.39,
+          "R2": 0.4357
+        },
+        "test": {
+          "MAE": 86.13,
+          "RMSE": 118.65,
+          "MAPE_pct": 8.06,
+          "R2": 0.9526
+        }
+      },
+      "GradientBoosting": {
+        "val": {
+          "MAE": 156.42,
+          "RMSE": 195.3,
+          "MAPE_pct": 6.38,
+          "R2": 0.4357
+        },
+        "test": {
+          "MAE": 88.09,
+          "RMSE": 122.08,
+          "MAPE_pct": 8.18,
+          "R2": 0.9499
+        }
+      }
+    },
+    "feature_count": 38,
+    "split_sizes": {
+      "train": 3066,
+      "validation": 660,
+      "test": 660
+    }
+  },
+  "demand_forecasting_evaluation": {
+    "model_type": "Random Forest Classifier (7-Day Demand Pressure Trend)",
+    "accuracy": 0.4909,
+    "classes": [
+      "Decreasing",
+      "Increasing",
+      "Stable"
+    ],
+    "classification_report": {
+      "Decreasing": {
+        "precision": 0.5641025641025641,
+        "recall": 0.8020833333333334,
+        "f1-score": 0.6623655913978495,
+        "support": 384.0
+      },
+      "Increasing": {
+        "precision": 0.3727598566308244,
+        "recall": 0.4663677130044843,
+        "f1-score": 0.41434262948207173,
+        "support": 223.0
+      },
+      "Stable": {
+        "precision": 0.3684210526315789,
+        "recall": 0.07636363636363637,
+        "f1-score": 0.12650602409638553,
+        "support": 275.0
+      },
+      "accuracy": 0.4909297052154195,
+      "macro avg": {
+        "precision": 0.4350944911216558,
+        "recall": 0.44827156090048476,
+        "f1-score": 0.40107141499210225,
+        "support": 882.0
+      },
+      "weighted avg": {
+        "precision": 0.45471272348950414,
+        "recall": 0.4909297052154195,
+        "f1-score": 0.43258044228773496,
+        "support": 882.0
+      }
+    },
+    "train_samples": 3504,
+    "test_samples": 882,
+    "limitation_statement": "Agricultural Market Proxy Notice: APMC mandi arrivals represent physical wholesale market supply volume, NOT final retail consumer demand. Genuine household consumption data is unavailable in government mandi records. This module computes a Market Absorption & Demand Pressure Index proxy based on arrival velocity, price elasticity, and seasonal clearance rates."
+  }
+}
