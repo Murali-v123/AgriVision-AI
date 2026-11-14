@@ -25,10 +25,21 @@ async function ensureAuthenticated() {
 }
 
 async function apiLogin(email, pass) {
+  const submitBtn = document.querySelector('form[data-form="login"] button[type="submit"]');
+  const oldText = submitBtn ? submitBtn.innerHTML : '';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="loading-spinner"></span> Signing in...';
+  }
+  toast('Signing in...', true);
   try {
     const r = await API.login(email, pass);
     const d = await r.json();
-    if (!r.ok) { toast(d.detail || d.non_field_errors?.[0] || 'Login failed'); return; }
+    if (!r.ok) {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = oldText; }
+      toast(d.detail || d.non_field_errors?.[0] || 'Login failed');
+      return;
+    }
     const access = d.access || d.tokens?.access;
     const refresh = d.refresh || d.tokens?.refresh;
     API.Auth.setTokens(access, refresh);
@@ -43,7 +54,10 @@ async function apiLogin(email, pass) {
     save();
     toast('Welcome, ' + (d.user.full_name || '').split(' ')[0], true);
     location.href = BASE + d.user.role + '/dashboard.html';
-  } catch (e) { toast('Connection error. Is the backend running?'); }
+  } catch (e) {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = oldText; }
+    toast('Connection error. Is the backend running?');
+  }
 }
 
 async function apiRegister(v) {
@@ -117,6 +131,27 @@ async function apiLoadBids() {
       const adapted = APIAdapter.bid(b);
       const idx = db.deals.findIndex(x => x.id === adapted.id);
       if (idx >= 0) db.deals[idx] = adapted; else db.deals.push(adapted);
+      /* Also seed listing data from bid's nested listing_detail so listingOf() resolves correctly */
+      if (b.listing_detail && b.listing_detail.id) {
+        const ld = b.listing_detail;
+        const lAdapted = {
+          id: String(ld.id),
+          name: ld.name || ld.product_name || 'Farm Produce',
+          crop: ld.crop || '',
+          qty: ld.available_qty || ld.quantity || 0,
+          ask: ld.asking_price || 0,
+          grade: ld.quality_grade || '',
+          conf: ld.quality_confidence || 0,
+          status: ld.status || 'active',
+          district: ld.district || '',
+          farmer: adapted.farmerId,
+          img: ld.image || null,
+          unit: 'kg',
+        };
+        const li = db.listings.findIndex(x => x.id === lAdapted.id);
+        if (li >= 0) db.listings[li] = {...db.listings[li], ...lAdapted};
+        else db.listings.push(lAdapted);
+      }
     });
     save();
     if (typeof render === 'function') render();
@@ -400,6 +435,9 @@ async function act(a,d,el){
   case 'logout': if(window.API){API.Auth.clear();} db.session=null;save();location.href=BASE+'login.html';break;
   case 'switch':{
    const x=db.users.find(y=>y.email===d.e);if(!x)break;
+   /* Show instant loading feedback */
+   toast('Switching to '+x.name+'…',true);
+   if(el){el.disabled=true;el.style.opacity='0.6';el.innerHTML='<span class="loading-spinner"></span> Switching…';}
    const pass = x.pass || (x.role === 'farmer' ? 'farmer123' : x.role === 'buyer' ? 'buyer123' : 'admin123');
    if(window.API){
     try {
