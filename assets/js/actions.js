@@ -1,5 +1,215 @@
 /* Actions, forms, image analysis, event wiring and page boot. Every control here does something real in this prototype. */
 
+/* ===== BACKEND BRIDGE =====
+   These functions replace localStorage mutations with API calls.
+   The existing act() switch cases call these instead of modifying db directly.
+   On API success, they reload data into db and re-render. */
+
+async function ensureAuthenticated() {
+  if (API.Auth.isLoggedIn()) return true;
+  const user = me();
+  if (!user || !user.email) return false;
+  const pass = user.pass || (user.role === 'farmer' ? 'farmer123' : user.role === 'buyer' ? 'buyer123' : 'admin123');
+  try {
+    const r = await API.login(user.email, pass);
+    if (r && r.ok) {
+      const d = await r.json();
+      const access = d.access || d.tokens?.access;
+      const refresh = d.refresh || d.tokens?.refresh;
+      API.Auth.setTokens(access, refresh);
+      API.Auth.setUser(d.user);
+      return true;
+    }
+  } catch(e) {}
+  return false;
+}
+
+async function apiLogin(email, pass) {
+  try {
+    const r = await API.login(email, pass);
+    const d = await r.json();
+    if (!r.ok) { toast(d.detail || d.non_field_errors?.[0] || 'Login failed'); return; }
+    const access = d.access || d.tokens?.access;
+    const refresh = d.refresh || d.tokens?.refresh;
+    API.Auth.setTokens(access, refresh);
+    API.Auth.setUser(d.user);
+    // Also set db.session shim for compatibility
+    db.session = d.user.id;
+    db.nav = 'overview';
+    const adapted = APIAdapter.user(d.user);
+    // Upsert into db.users
+    const idx = db.users.findIndex(u => u.id === adapted.id);
+    if (idx >= 0) db.users[idx] = adapted; else db.users.push(adapted);
+    save();
+    toast('Welcome, ' + (d.user.full_name || '').split(' ')[0], true);
+    location.href = BASE + d.user.role + '/dashboard.html';
+  } catch (e) { toast('Connection error. Is the backend running?'); }
+}
+
+async function apiRegister(v) {
+  const payload = {
+    email: v.email.trim(),
+    password: v.pass,
+    full_name: (v.name || v.company || '').trim(),
+    role: v.role,
+    phone: v.phone || '',
+  };
+  if (v.role === 'farmer') {
+    payload.farm_name = (v.farm || '').trim();
+    payload.village = (v.village || '').trim();
+    payload.district = v.district;
+    payload.state = v.state || 'Karnataka';
+    payload.farm_size = 0;
+  } else {
+    payload.company_name = (v.company || '').trim();
+    payload.contact_person = (v.contactPerson || '').trim();
+    payload.business_type = v.business || 'Wholesaler';
+    payload.district = v.district;
+    payload.state = v.state || 'Karnataka';
+  }
+  try {
+    const r = await API.register(payload);
+    const d = await r.json();
+    if (!r.ok) {
+      const msg = d.email?.[0] || d.non_field_errors?.[0] || d.detail || JSON.stringify(d);
+      toast(msg); return;
+    }
+    const access = d.access || d.tokens?.access;
+    const refresh = d.refresh || d.tokens?.refresh;
+    API.Auth.setTokens(access, refresh);
+    API.Auth.setUser(d.user);
+    db.session = d.user.id;
+    const adapted = APIAdapter.user(d.user);
+    db.users.push(adapted);
+    save();
+    toast('Account created. Verification is pending.', true);
+    location.href = BASE + d.user.role + '/dashboard.html';
+  } catch (e) { toast('Connection error. Is the backend running?'); }
+}
+
+async function apiLoadMyListings() {
+  await ensureAuthenticated();
+  if (!API.Auth.isLoggedIn()) return;
+  try {
+    const r = await API.getProducts();
+    if (!r || !r.ok) return;
+    const d = await r.json();
+    const items = Array.isArray(d) ? d : (d.results || []);
+    items.forEach(l => {
+      const adapted = APIAdapter.listing(l);
+      const idx = db.listings.findIndex(x => x.id === adapted.id);
+      if (idx >= 0) db.listings[idx] = adapted; else db.listings.push(adapted);
+    });
+    save();
+    if (typeof render === 'function') render();
+  } catch (e) { console.warn('apiLoadMyListings:', e); }
+}
+
+async function apiLoadBids() {
+  await ensureAuthenticated();
+  if (!API.Auth.isLoggedIn()) return;
+  try {
+    const r = await API.getBids();
+    if (!r || !r.ok) return;
+    const d = await r.json();
+    const items = Array.isArray(d) ? d : (d.results || []);
+    items.forEach(b => {
+      const adapted = APIAdapter.bid(b);
+      const idx = db.deals.findIndex(x => x.id === adapted.id);
+      if (idx >= 0) db.deals[idx] = adapted; else db.deals.push(adapted);
+    });
+    save();
+    if (typeof render === 'function') render();
+  } catch (e) { console.warn('apiLoadBids:', e); }
+}
+
+async function apiPlaceBid(listingId, price, qty, message, delivery) {
+  try {
+    await ensureAuthenticated();
+    const r = await API.createBid({ listing_id: listingId, offered_price: price, quantity: qty, message: message || '', delivery_preference: delivery || '' });
+    const d = await r.json();
+    if (!r.ok) {
+      if (d.code === 'token_not_valid') {
+        API.Auth.clear();
+        await ensureAuthenticated();
+        const retry = await API.createBid({ listing_id: listingId, offered_price: price, quantity: qty, message: message || '', delivery_preference: delivery || '' });
+        if (retry.ok) {
+          const rd = await retry.json();
+          db.deals.push(APIAdapter.bid(rd));
+          save();
+          return true;
+        }
+      }
+      const msg = d.detail || (d.listing_id && d.listing_id[0]) || (d.non_field_errors && d.non_field_errors[0]) || (typeof d === 'string' ? d : JSON.stringify(d));
+      toast(msg);
+      return false;
+    }
+    const adapted = APIAdapter.bid(d);
+    db.deals.push(adapted);
+    save();
+    return true;
+  } catch (e) { toast('Connection error'); return false; }
+}
+
+async function apiAcceptBid(bidId) {
+  try {
+    await ensureAuthenticated();
+    const r = await API.acceptBid(bidId);
+    const d = await r.json();
+    if (!r.ok) {
+      if (d.code === 'token_not_valid') {
+        API.Auth.clear();
+        await ensureAuthenticated();
+        const retry = await API.acceptBid(bidId);
+        if (retry.ok) {
+          await apiLoadMyListings();
+          await apiLoadBids();
+          return true;
+        }
+      }
+      toast(d.detail || 'Accept failed');
+      return false;
+    }
+    await apiLoadMyListings();
+    await apiLoadBids();
+    return true;
+  } catch (e) { toast('Connection error'); return false; }
+}
+
+async function apiRejectBid(bidId) {
+  try {
+    await ensureAuthenticated();
+    const r = await API.rejectBid(bidId);
+    if (!r || !r.ok) { toast('Reject failed'); return false; }
+    await apiLoadBids();
+    return true;
+  } catch (e) { toast('Connection error'); return false; }
+}
+
+async function apiCounterBid(bidId, price, qty, note) {
+  try {
+    await ensureAuthenticated();
+    const r = await API.counterBid(bidId, { offered_price: price, quantity: qty, message: note || '' });
+    const d = await r.json();
+    if (!r.ok) { toast(d.detail || 'Counter failed'); return false; }
+    await apiLoadBids();
+    return true;
+  } catch (e) { toast('Connection error'); return false; }
+}
+
+// Called on page boot if logged in via API
+async function syncFromBackend() {
+  await ensureAuthenticated();
+  const user = API.Auth.getUser();
+  if (!user) return;
+  db.session = user.id;
+  const adapted = APIAdapter.user(user);
+  const idx = db.users.findIndex(u => u.id === adapted.id);
+  if (idx >= 0) db.users[idx] = adapted; else db.users.push(adapted);
+  await Promise.all([apiLoadMyListings(), apiLoadBids()]);
+}
+/* ===== END BACKEND BRIDGE ===== */
+
 /* ---------- Image analysis (demonstration rule on real pixels) ---------- */
 function imageFeatures(src){
  return new Promise((res,rej)=>{
@@ -115,7 +325,7 @@ function listingDetailModal(l){
 }
 
 /* ---------- Actions ---------- */
-function act(a,d,el){
+async function act(a,d,el){
  const u=me();
  switch(a){
   /* public */
@@ -124,9 +334,20 @@ function act(a,d,el){
   case 'togglepw':{const i=el.parentElement.querySelector('input');const show=i.type==='password';i.type=show?'text':'password';el.textContent=show?'Hide':'Show';el.setAttribute('aria-label',show?'Hide password':'Show password');break;}
   case 'regrole': REG_ROLE=d.r;renderAuth('register');break;
   case 'theme': setTheme(d.t);render();break;
-  case 'logout': db.session=null;save();location.href=BASE+'login.html';break;
+  case 'logout': if(window.API){API.Auth.clear();} db.session=null;save();location.href=BASE+'login.html';break;
   case 'switch':{
    const x=db.users.find(y=>y.email===d.e);if(!x)break;
+   const pass = x.pass || (x.role === 'farmer' ? 'farmer123' : x.role === 'buyer' ? 'buyer123' : 'admin123');
+   if(window.API){
+    try {
+     const r = await API.login(x.email, pass);
+     if(r && r.ok){
+      const resp = await r.json();
+      API.Auth.setTokens(resp.access || resp.tokens?.access, resp.refresh || resp.tokens?.refresh);
+      API.Auth.setUser(resp.user);
+     }
+    } catch(e){}
+   }
    db.session=x.id;db.nav='overview';log('Switched to demonstration account '+x.name);save();
    location.href=BASE+x.role+'/dashboard.html';break;}
   case 'nav': if(u)goTo(d.v,u.role);break;
@@ -193,6 +414,11 @@ function act(a,d,el){
   /* bids and orders */
   case 'accept':{
    const x=db.deals.find(y=>y.id===d.id);if(!x||!isOpen(x)||x.by===u.role)break;
+   if(window.API){
+    const ok=await apiAcceptBid(d.id);
+    if(ok){toast('Accepted. Order created.',true);render();}
+    break;
+   }
    const L=listingOf(x.listing);
    if(L&&x.qty>L.qty){toast('Only '+num(L.qty)+' kg of this listing is still available. Counter with a smaller quantity.');break}
    x.status='accepted';x.stage='confirmed';
@@ -207,6 +433,11 @@ function act(a,d,el){
    toast('Accepted. An order has been created.'+(left>0?' '+num(left)+' kg remains listed.':' Listing sold out.')+(dropped?' '+dropped+' bid'+(dropped>1?'s':'')+' above the remaining stock closed.':''),true);break;}
   case 'reject':{
    const x=db.deals.find(y=>y.id===d.id);if(!x||!isOpen(x))break;
+   if(window.API){
+    const ok=await apiRejectBid(d.id);
+    if(ok){toast('Rejected');render();}
+    break;
+   }
    x.status='rejected';x.by=u.role;log('Rejected a deal on '+listingOf(x.listing).name);save();render();toast('Rejected');break;}
   case 'counter-open':{const x=db.deals.find(y=>y.id===d.id);if(x)openM(counterModal(x));break;}
   case 'dispatch':{const x=db.deals.find(y=>y.id===d.id);if(x&&x.stage==='confirmed'){x.stage='dispatched';log('Dispatched order '+x.id.toUpperCase());save();render();toast('Marked as dispatched',true)}break;}
@@ -218,6 +449,11 @@ function act(a,d,el){
    const p=+$('#bp').value,q=Math.round(+$('#bq').value),del=$('#bd').value,msg=$('#bm').value.trim();
    if(!(p>0)){toast('Enter a price per kg greater than zero');break}
    if(!(q>0&&q<=L.qty)){toast('Quantity must be between 1 and '+num(L.qty)+' kg');break}
+   if(window.API){
+    const ok=await apiPlaceBid(L.id,p,q,msg,del);
+    if(ok){log(u.name+' bid '+fmtK(p)+'/kg on '+L.name);toast('Bid sent to the farm',true);goTo('bids','buyer');}
+    break;
+   }
    db.deals.push({id:'d'+Date.now().toString(36),listing:L.id,farmerId:L.farmer,buyerId:u.id,initiator:'buyer',price:p,qty:q,status:'pending',by:'buyer',stage:null,paid:false,t:stamp(),message:[del,msg].filter(Boolean).join(' · '),rounds:1});
    log(u.name+' bid '+fmtK(p)+'/kg on '+L.name);save();toast('Bid sent to the farm',true);goTo('bids','buyer');break;}
 
@@ -242,6 +478,7 @@ function act(a,d,el){
 
 /* ---------- Form submissions ---------- */
 function login(email,pass){
+ if(window.API){apiLogin(email,pass);return;}
  const x=db.users.find(y=>y.email.toLowerCase()===email.trim().toLowerCase()&&y.pass===pass);
  if(!x){toast('Email or password is incorrect');return}
  if(x.status==='suspended'){toast('This account is suspended. Contact the platform team.');return}
@@ -250,6 +487,7 @@ function login(email,pass){
  location.href=BASE+x.role+'/dashboard.html';
 }
 function register(v){
+ if(window.API){apiRegister(v);return;}
  if(db.users.some(x=>x.email.toLowerCase()===v.email.toLowerCase())){toast('An account with this email already exists');return}
  if(v.phone&&!/^[6-9]\d{9}$/.test(v.phone)){toast('Enter a valid 10-digit mobile number');return}
  if(!KA_DISTRICTS.includes(v.district)&&!PLACES[v.district]){toast('Choose a district from the list');return}
@@ -322,6 +560,10 @@ document.addEventListener('submit',e=>{
   const x=db.deals.find(y=>y.id===form.dataset.id);if(!x)return;
   const p=+v.price,q=Math.round(+v.qty);
   if(!(p>0)||!(q>0)){toast('Enter a valid price and quantity');return}
+  if(window.API){
+   apiCounterBid(x.id,p,q,v.note).then(ok=>{if(ok){closeM();toast('Counter offer sent',true);render();}});
+   return;
+  }
   x.price=p;x.qty=q;x.by=me().role;x.status='counter';x.rounds=(x.rounds||1)+1;if(v.note)x.message=v.note;
   log(me().name+' countered at '+fmtK(p)+'/kg');save();closeM();toast('Counter offer sent',true);render();return;
  }
@@ -392,11 +634,30 @@ if(P.kind==='landing'){
  location.href=BASE+(db.session&&me()?me().role+'/dashboard.html':'index.html');
 }else if(P.kind==='auth'){
  if(db.session&&me()){location.href=BASE+me().role+'/dashboard.html'}
+ else if(window.API&&API.Auth.isLoggedIn()){
+  const u=API.Auth.getUser();
+  if(u){location.href=BASE+u.role+'/dashboard.html';}
+  else renderAuth(P.mode||'login');
+ }
  else renderAuth(P.mode||'login');
 }else if(P.kind==='forgot'){
  renderForgot();
 }else if(P.kind==='app'){
- if(!db.session||!me()){location.href=BASE+'login.html'}
- else if(me().role!==P.role){location.href=BASE+me().role+'/dashboard.html'}
- else{db.nav=P.view||'overview';save();render()}
+ if(!db.session||!me()){
+  if(window.API&&API.Auth.isLoggedIn()){
+   const u=API.Auth.getUser();
+   if(u){db.session=u.id;db.nav=P.view||'overview';save();}
+   else{location.href=BASE+'login.html';}
+  }else{
+   location.href=BASE+'login.html';
+  }
+ }
+ if(db.session&&me()){
+  if(me().role!==P.role){location.href=BASE+me().role+'/dashboard.html'}
+  else{db.nav=P.view||'overview';save();render();
+   if(window.API&&API.Auth.isLoggedIn()){
+    syncFromBackend().catch(console.warn);
+   }
+  }
+ }
 }

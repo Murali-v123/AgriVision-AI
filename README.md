@@ -1,70 +1,124 @@
-# AgriVision AI – Frontend Demo (v2)
+# AgriVision AI v3.2 – AI-Powered Agricultural Marketplace
 
-Frontend-only demo for AgriVision AI (Build Beyond'26, Gradient Club, BMS College of Engineering).
-Pure HTML, CSS and JavaScript with Chart.js from CDN. No build step.
+Developed for **Build Beyond'26 (Problem Statement 4.2)**.
 
-## Run
-Open `index.html` in a browser, or serve the folder with any static server, e.g. `python -m http.server`.
-An internet connection is needed for Chart.js and Google Fonts.
+AgriVision AI connects smallholder farmers directly with wholesale buyers and food processors, eliminating predatory intermediaries through AI quality assessment, price intelligence, transparent bidding, and order tracking.
 
-## Demo accounts
-- Farmer: ramesh@demo.in / farmer123
-- Buyer: buyer@demo.in / buyer123 (FreshMart Wholesale)
-- Admin: admin@demo.in / admin123
+---
 
-## Demo flow
-1. Log in as the farmer. Open AI quality check, add a produce photo, run Analyze, set the asking price, then publish.
-2. Open Price intelligence for the charts and the suggested price.
-3. Log out, log in as the buyer, open Explore produce, view a listing and place a bid.
-4. Log in as the farmer, open Bids and accept the bid.
+## 🏗 Architecture & Project Structure
 
-## What changed in v2
-- **Photos instead of emoji.** Photos are resized and saved with the listing, and shown on cards and detail views. Crops without a photo get a neutral crop tile.
-- **New visual system.** A forest-green and wheat palette replaces the default Tailwind greens. Colours, radii and shadows are tokens at the top of `style.css`. Hover lift and count-up animations are removed. Hover effects now appear only on clickable cards.
-- **Icons.** Emoji and text glyphs are replaced with one stroke icon set (`ICONS` in `data.js`).
-- **Quality check.** Four steps are shown with progress. Analyze is disabled until a photo is added. The result shows a highlight overlay (marked illustrative), an editable asking price, and a clear publish action.
-- **Price intelligence.** Crop and market dropdowns keep their selection. The movement figure is calculated from the data (▲ 2.3%, previously a fixed 4.2%). The price range bar is positioned from the values, not by hand. The bar chart and its labels are clearer.
-- **Bids.** Choose a listing with a dropdown. Each bid shows its difference from the asking price, and the chart uses a zero baseline. Accept and reject ask for confirmation, and accepting declines the other open bids.
-- **Bug fixes.** Withdrawn listings show "Withdrawn" instead of "Pending". Farmers can restore withdrawn listings. Farmers cannot unhide listings that an admin hid. The bids page no longer hardcodes listing L1. The sales table shows the real seller name. User-entered text is escaped everywhere.
-- **Dialogs.** Modals have a close button and close on Escape. Destructive actions are confirmed.
-- **Accessibility.** Muted text meets WCAG AA contrast. Interactive cards and the drop zone work with the keyboard. Icon-only buttons have labels.
-- **Mobile.** The sidebar becomes a bottom tab bar on small screens.
-- **Sign-in and registration.** A product panel sits beside the form on desktop. Passwords can be shown or hidden. Registration uses a Karnataka district list and an optional mobile number, validated as 10 digits.
+The project consists of an existing multi-page responsive frontend integrated with a Django REST Framework backend:
 
-The browser storage key changed to `agrivision-demo-v2`, so earlier demo data is not loaded. Clear it manually only if you want to see the old data.
-
-## Project structure
 ```
 AgriVisionAI/
-├── index.html              redirects to login or the user's dashboard
-├── login.html
-├── register.html
-├── farmer/                 dashboard, quality-inspection, price-intelligence, marketplace,
-│                           my-produce, bids, sales-history
-├── buyer/                  dashboard, explore, my-bids, saved-listings, purchases
-├── admin/                  dashboard, users, moderation, activity
-└── assets/
-    ├── css/style.css       design tokens, components and responsive layout
-    ├── js/data.js          config, sample data, icons, routes, load()/save(), helpers
-    ├── js/ui.js            auth screens, app shell, views, charts and render()
-    └── js/actions.js       button actions, form handlers and page boot
+├── admin/                  # 11 Admin moderation & analytics pages
+├── buyer/                  # 12 Buyer discovery, bidding & orders pages
+├── farmer/                 # 11 Farmer produce, quality check & sales pages
+├── assets/
+│   ├── css/style.css       # Design tokens, components and responsive layout
+│   └── js/
+│       ├── icons.js        # SVG stroke icons
+│       ├── data.js         # Base configuration, constants, location data
+│       ├── api.js          # NEW Centralized API client & JWT token adapter
+│       ├── ui.js           # Reusable UI components & chart registry
+│       ├── views.js        # Page views for Farmer, Buyer, Admin
+│       └── actions.js      # Form submissions & API bridges with fallback
+├── index.html              # Landing page
+├── login.html              # Sign in page
+├── register.html           # Farmer / Buyer registration
+├── forgot.html             # Password recovery
+└── backend/                # NEW Django REST Framework Backend
+    ├── agrivision/         # Django core settings, URLs, WSGI, ASGI
+    ├── apps/
+    │   ├── users/          # Custom User model, Profiles, Auth & Buyer discovery
+    │   ├── products/       # Produce listings & AI Quality Assessment
+    │   ├── bids/           # Bidding, Counter-offers & Atomic Acceptance
+    │   ├── orders/         # Order tracking & delivery status
+    │   ├── market/         # Mandi Price Intelligence & Demand Index
+    │   └── admin_api/      # Admin Analytics, Moderation & AI Auditing
+    ├── db.sqlite3          # Pre-seeded database with all demo accounts & listings
+    ├── requirements.txt    # Python dependencies
+    ├── .env.example        # Environment variables template
+    ├── manage.py
+    └── README.md           # In-depth Backend API reference
 ```
 
-## Where to edit
-- Colours, type and spacing: `:root` variables at the top of `assets/css/style.css`
-- Sample numbers (reference price, suggested price, forecast range, demand): constants at the top of `assets/js/data.js`
-- Sample listings and bids: `seed()` in `assets/js/data.js`
-- Persistence: `load()` / `save()` in `assets/js/data.js` (localStorage key `agrivision-demo-v2`; clear it to reset)
-- Screens: functions in `VIEWS` in `assets/js/ui.js`
-- Button behaviour: `act()` in `assets/js/actions.js`
-- Icons: `ICONS` in `assets/js/data.js`
+---
 
-## Backend integration (later)
-Replace `load()`/`save()` and the `db` mutations in `actions.js` with Django REST calls.
-Sample prices, the AI report and the demand figures are illustrative and must be replaced with real model and market data.
-Passwords are stored in plain text in this demo. Hash them on the server.
+## ⚡ Quick Start Guide
 
-## Not yet done
-- Kannada and Hindi translations
-- Phone-number login with OTP
-- Real model output for crop, grade and highlight regions
+### 1. Start the Backend Server (Port 8000)
+```powershell
+# Navigate to the backend directory
+cd backend
+
+# Activate virtual environment
+.\venv\Scripts\Activate.ps1   # Windows PowerShell
+# source venv/bin/activate    # Linux/macOS
+
+# Run migrations (already applied)
+python manage.py migrate
+
+# Seed demonstration accounts and listings (already seeded)
+python manage.py seed_demo_data
+
+# Start the server
+python manage.py runserver 127.0.0.1:8000
+```
+Backend API will be running at `http://127.0.0.1:8000/api/`.
+
+### 2. Open the Frontend
+Open `index.html` or `login.html` directly in your browser, or serve using any static web server:
+```powershell
+# From the AgriVisionAI root directory
+python -m http.server 5500
+```
+Then navigate to `http://localhost:5500/login.html`.
+
+---
+
+## 🔑 Demonstration Accounts
+
+All demonstration accounts have been seeded into the backend database:
+
+| Role | Email | Password | Details |
+| :--- | :--- | :--- | :--- |
+| **Farmer** | `ramesh@demo.in` | `farmer123` | Ramesh Vegetable Farm (Kolar, Karnataka) |
+| **Buyer** | `buyer@demo.in` | `buyer123` | FreshMart Wholesale (Bengaluru, Karnataka) – Verified |
+| **Admin** | `admin@demo.in` | `admin123` | Platform Admin (Full Moderation & Audit Privileges) |
+
+---
+
+## 🧪 Running Automated Tests
+
+Run the full Django test suite (16 tests covering auth, bidding, partial orders, quality checks, permissions):
+```powershell
+cd backend
+python manage.py test apps.users apps.products apps.bids apps.admin_api
+```
+
+Run the live end-to-end integration test:
+```powershell
+cd backend
+python test_live_workflow.py
+```
+This tests:
+1. Farmer sign-in & JWT generation
+2. Buyer sign-in & verification check
+3. Farmer produce listing creation
+4. Buyer marketplace browsing with query filters
+5. Buyer bid submission
+6. Atomic transaction acceptance by Farmer
+7. Stock deduction (500 kg $\rightarrow$ 300 kg remaining) & Order creation
+8. Order dispatch & delivery lifecycle
+9. Admin analytics aggregation & GMV calculation
+10. AI model transparency & inspection disclosure
+
+---
+
+## 🛡 Security & Design Principles
+- **No Client Trust**: Farmer and Buyer IDs are extracted from authenticated JWT tokens, never trusted from client payloads.
+- **Concurrency & Transaction Safety**: Bid acceptance uses database row-level locking (`select_for_update()`) and atomic transactions to prevent double acceptance or overselling.
+- **Role Isolation**: Strict permission checks prevent farmers from editing competitors' listings or unauthorized users accessing admin endpoints.
+- **Truthful AI & Market Data**: The quality inspection uses an RGB pixel uniformity heuristic clearly labeled as demonstration data (`pixel_heuristic_demo`), avoiding deceptive claims of AGMARKNET certification.
