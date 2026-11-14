@@ -1,0 +1,66 @@
+{
+  "best_model": "GradientBoosting",
+  "validation_metrics": {
+    "MAE": 156.42,
+    "RMSE": 195.3,
+    "MAPE_pct": 6.38,
+    "R2": 0.4357
+  },
+  "test_metrics": {
+    "MAE": 88.09,
+    "RMSE": 122.08,
+    "MAPE_pct": 8.18,
+    "R2": 0.9499
+  },
+  "residual_std": 195.14,
+  "all_models": {
+    "Baseline": {
+      "val": {
+        "MAE": 159.0,
+        "RMSE": 200.96,
+        "MAPE_pct": 6.52,
+        "R2": 0.4026
+      },
+      "test": {
+        "MAE": 127.56,
+        "RMSE": 168.82,
+        "MAPE_pct": 12.36,
+        "R2": 0.9041
+      }
+    },
+    "RandomForest": {
+      "val": {
+        "MAE": 157.05,
+        "RMSE": 195.3,
+        "MAPE_pct": 6.39,
+        "R2": 0.4357
+      },
+      "test": {
+        "MAE": 86.13,
+        "RMSE": 118.65,
+        "MAPE_pct": 8.06,
+        "R2": 0.9526
+      }
+    },
+    "GradientBoosting": {
+      "val": {
+        "MAE": 156.42,
+        "RMSE": 195.3,
+        "MAPE_pct": 6.38,
+        "R2": 0.4357
+      },
+      "test": {
+        "MAE": 88.09,
+        "RMSE": 122.08,
+        "MAPE_pct": 8.18,
+        "R2": 0.9499
+      }
+    }
+  },
+  "feature_count": 38,
+  "split_sizes": {
+    "train": 3066,
+    "validation": 660,
+    "test": 660
+  }
+}
