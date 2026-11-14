@@ -1,415 +1,430 @@
-/* UI: auth, app shell, views, charts and render. */
+/* UI core: app shell, components, Nearby Buyers panel, auth and landing pages, chart registry and render. */
 
-/* ---------- Shared components ---------- */
-const brandHTML=(cls='')=>`<div class="brand ${cls}"><span class="mark">${icon('leaf')}</span><span>AgriVision <span class="ai">AI</span></span></div>`;
-const pageHead=(title,sub,extra='')=>`<div class="pagehead"><div><h1>${title}</h1>${sub?`<p class="sub">${sub}</p>`:''}</div>${extra}</div>`;
-const sampleTag=()=>'<span class="tag info">Sample data</span>';
-const kv=(l,v,meta='',cls='')=>`<div><div class="mut">${l}</div><span class="bigval ${cls}">${v}</span>${meta?`<div class="mut">${meta}</div>`:''}</div>`;
+/* ---------- Components ---------- */
+const avatar=(u,cls='')=>`<span class="avatar ${cls} ${u.role==='buyer'?'acc':''}" aria-hidden="true">${esc((u.name||'?').split(' ').map(w=>w[0]).slice(0,2).join(''))}</span>`;
+const locOf=(u,full=false)=>{
+ const txt=full?`${u.city}, ${u.district}, ${u.state}`:`${u.city}, ${u.state}`;
+ return `<span class="loc">${icon('map-pin')}<span title="${esc(txt)}">${esc(txt)}</span></span>`;
+};
+const verifiedOf=u=>u.verified?`<span class="badge-verified">${icon('badge-check')}Verified</span>`:`<span class="badge-pending">${icon('clock')}Verification pending</span>`;
+function distLine(viewer,other){
+ const d=distanceBetween(viewer,other);
+ if(d!=null)return `<span class="dist">${icon('navigation')}${d} km away <span class="mut">(approx.)</span></span>`;
+ if(viewer&&viewer.locShare===false)return `<span class="dist">${icon('eye-off')}Distance hidden: location sharing is off</span>`;
+ return `<span class="dist">${icon('map')}Distance not available</span>`;
+}
+const chips=arr=>(arr||[]).map(x=>`<span class="chip outline">${esc(x)}</span>`).join(' ');
+const statusChip=s=>{
+ const m={active:['ok','Active'],paused:['warn','Paused'],sold:['info','Sold'],withdrawn:['outline','Withdrawn'],hidden:['bad','Hidden']};
+ const [c,t]=m[s]||['outline',s];return `<span class="chip ${c}">${t}</span>`;
+};
+const dealChip=d=>{
+ if(d.status==='accepted')return `<span class="chip ok">${icon('check')}Accepted</span>`;
+ if(d.status==='rejected')return `<span class="chip bad">${icon('x')}Rejected</span>`;
+ if(d.status==='counter')return `<span class="chip info">${icon('refresh')}Counter offer</span>`;
+ return `<span class="chip warn">${icon('clock')}Pending</span>`;
+};
+const STAGES=['confirmed','dispatched','delivered'],STAGE_LABEL={confirmed:'Confirmed',dispatched:'Dispatched',delivered:'Delivered'};
+function stageTrack(stage){
+ const idx=STAGES.indexOf(stage);
+ return `<div class="stepper">${STAGES.map((s,i)=>`<span class="s ${i<idx?'done':''} ${i===idx?'on':''}"><i>${i<idx?'✓':i+1}</i>${STAGE_LABEL[s]}</span>${i<STAGES.length-1?'<span class="sep"></span>':''}`).join('')}</div>`;
+}
+const pageHead=(title,sub,extra='')=>`<div class="pagehead"><div><h1>${title}</h1>${sub?`<p class="sub">${sub}</p>`:''}</div>${extra?`<div class="row" style="gap:8px">${extra}</div>`:''}</div>`;
+const statCard=(label,value,ic,trend,cls='')=>`<div class="card stat"><div class="label">${label}${icon(ic)}</div><span class="bigval ${cls}">${value}</span>${trend?`<span class="trend ${trend.dir}">${icon(trend.dir==='up'?'trend-up':'trend-down')}${trend.text}</span>`:''}</div>`;
+const kv=(l,v,meta='',cls='')=>`<div><div class="mut small">${l}</div><span class="bigval ${cls}">${v}</span>${meta?`<div class="mut small">${meta}</div>`:''}</div>`;
+/* Row of compact stat cards. Each item: [label, value, note, tone]. */
 const statRow=arr=>`<div class="grid4">${arr.map(([l,v,n,c])=>`<div class="card">${kv(l,v,n||'',c||'')}</div>`).join('')}</div>`;
-const statCards=arr=>statRow(arr.map(([l,v,n])=>[l,num(v),n]));
+const statCards=arr=>statRow(arr.map(([l,v,n])=>[l,typeof v==='number'?num(v):v,n]));
 const emptyState=(title,text,cta='',ic='leaf')=>`<div class="empty"><span class="ico">${icon(ic)}</span><b>${title}</b><p class="mut" style="margin:0 auto;max-width:380px">${text}</p>${cta}</div>`;
-function statusTag(s){
- const map={active:['ok','Active'],accepted:['ok','Accepted'],sold:['ok','Sold'],pending:['warn','Pending'],rejected:['bad','Rejected'],hidden:['bad','Hidden'],withdrawn:['','Withdrawn']};
- const [c,t]=map[s]||['warn','Pending'];
- return `<span class="tag ${c}">${t}</span>`;
-}
-function greeting(){const h=new Date().getHours();return h<12?'Good morning':h<17?'Good afternoon':'Good evening'}
-function mediaInner(l){return l.img?`<img src="${l.img}" alt="${esc(l.crop)} photo">`:cropTile(l.crop,0)}
-function currentBidListing(){
- const mine=myListings();if(!mine.length)return null;
- const L=mine.find(x=>x.id===PR.bl)||mine[0];PR.bl=L.id;return L;
-}
+/* Placeholder tints per crop, used until a real photo exists. */
+const CROP_TINT={Tomato:['#F6E3DC','#A8432C'],Onion:['#EEE6F2','#6B4A86'],Potato:['#F3EBD8','#7A5E22']};
+const tintOf=crop=>{const t=CROP_TINT[crop]||['var(--chip)','var(--brand)'];return `background:${t[0]};color:${t[1]}`};
+const photoOf=(l,tall=false)=>`<div class="photo ${tall?'tall':''}">${l.img?`<img src="${l.img}" alt="${esc(l.name)} photo">`:`<span class="tile full" style="${tintOf(l.crop)}">${esc(l.crop[0])}</span>`}</div>`;
+const gradeChip=(g,conf)=>`<span class="chip ${g==='A'?'ok':g==='B'?'info':'warn'}">Grade ${g}${conf?` · ${conf}%`:''}</span>`;
 
-/* ---------- Auth ---------- */
-function renderAuth(mode='login'){
- const reg=mode==='register';
- $('#app').innerHTML=`<div class="auth">
-  <aside class="hero">
-   ${brandHTML()}
-   <div>
-    <h2>Sell at a fair price, with proof of quality.</h2>
-    <p>Photo-based quality checks, mandi price context and bids from verified buyers, built for farmers and the traders who buy from them.</p>
-    <ul>
-     <li>${icon('scan')}<span>Check produce quality from a single photo, with a note on what was looked at.</span></li>
-     <li>${icon('trend')}<span>See recent mandi prices and a suggested price before you list.</span></li>
-     <li>${icon('check')}<span>Buyers are verified by the platform before they can place bids.</span></li>
-    </ul>
-   </div>
-   <p class="fine">Prototype with sample data · Build Beyond '26</p>
-  </aside>
-  <div class="authwrap"><div class="authbox">
-   ${brandHTML('dark')}
-   <h1>${reg?'Create your account':'Welcome back'}</h1>
-   <p class="sub">${reg?'Takes about a minute. Buyers are verified before they can bid.':'Sign in to open your workspace.'}</p>
-   <div class="card" style="margin-top:20px;padding:24px">
-    <div class="tabs" role="tablist">
-     <button role="tab" aria-selected="${!reg}" class="${reg?'':'on'}" data-act="authmode" data-m="login">Sign in</button>
-     <button role="tab" aria-selected="${reg}" class="${reg?'on':''}" data-act="authmode" data-m="register">Create account</button>
-    </div>
-    ${reg?registerForm():loginForm()}
-   </div>
-  </div></div>
- </div>`;
-}
-function loginForm(){
- return `<form data-form="login">
-  <div class="form-field"><label for="em">Email</label><input id="em" name="email" type="email" required autocomplete="username" placeholder="you@example.com"></div>
-  <div class="form-field" style="margin-top:14px"><label for="pw">Password</label>
-   <div class="pw"><input id="pw" name="pass" type="password" required autocomplete="current-password" placeholder="Your password"><button type="button" data-act="togglepw" aria-label="Show password">Show</button></div></div>
-  <button class="btn p w" type="submit">Sign in</button>
- </form>
- <div class="divider">Try a demo account</div>
- <div class="demos">
-  <button class="demo" type="button" data-act="demo" data-e="ramesh@demo.in" data-p="farmer123"><span><b>Farmer</b> · Ramesh Kumar, Kolar</span><span class="tag ok">Farmer</span></button>
-  <button class="demo" type="button" data-act="demo" data-e="buyer@demo.in" data-p="buyer123"><span><b>Buyer</b> · FreshMart Wholesale</span><span class="tag info">Buyer</span></button>
-  <button class="demo" type="button" data-act="demo" data-e="admin@demo.in" data-p="admin123"><span><b>Administrator</b> · Platform Admin</span><span class="tag acc">Admin</span></button>
- </div>`;
-}
-function registerForm(){
- return `<form data-form="register">
-  <div class="form-field"><label for="rn">Full name</label><input id="rn" name="name" required autocomplete="name" placeholder="As on your ID"></div>
-  <div class="form-field" style="margin-top:14px"><label>I am a</label>
-   <div class="roles">
-    <label class="role"><input type="radio" name="role" value="farmer" checked><span><b>Farmer</b><br>I grow and sell produce</span></label>
-    <label class="role"><input type="radio" name="role" value="buyer"><span><b>Buyer</b><br>Retailer, wholesaler or processor</span></label>
-   </div></div>
-  <div class="form-field" style="margin-top:14px"><label for="re">Email</label><input id="re" name="email" type="email" required autocomplete="email" placeholder="you@example.com"></div>
-  <div class="form-field" style="margin-top:14px"><label for="rp">Mobile number <span class="mut" style="font-weight:400">(optional)</span></label><input id="rp" name="phone" inputmode="numeric" maxlength="10" pattern="[6-9][0-9]{9}" placeholder="10-digit mobile"></div>
-  <div class="form-field" style="margin-top:14px"><label for="rd">District</label><select id="rd" name="district">${DISTRICTS.map(d=>`<option ${d==='Kolar'?'selected':''}>${d}</option>`).join('')}</select></div>
-  <div class="form-field" style="margin-top:14px"><label for="rpw">Password</label><input id="rpw" name="pass" type="password" required minlength="6" autocomplete="new-password" placeholder="At least 6 characters"></div>
-  <button class="btn p w" type="submit">Create account</button>
- </form>`;
-}
-function login(email,pass){
- const u=db.users.find(x=>x.email.toLowerCase()===email.trim().toLowerCase()&&x.pass===pass);
- if(!u){toast('Email or password is incorrect');return}
- db.session=u.id;db.nav='overview';log(u.name+' signed in');save();
- toast('Welcome, '+u.name.split(' ')[0],true);
- location.href=BASE+u.role+'/dashboard.html';
-}
-
-/* ---------- App shell ---------- */
-function renderShell(){
- const u=me(),items=NAV[u.role];
- const label={farmer:'Farmer workspace',buyer:'Buyer workspace',admin:'Administration'}[u.role];
- $('#app').innerHTML=`<div class="app">
-  <aside class="side" id="side" aria-label="Main navigation">
-   ${brandHTML()}
-   ${items.map(([id,l,ic,s])=>`<button class="nav" data-act="nav" data-v="${id}" aria-current="${db.nav===id?'page':'false'}"><span class="nic">${icon(ic)}</span><span class="long">${l}</span><span class="short">${s}</span></button>`).join('')}
-   <div class="foot">Prototype · sample data<br>Saved in this browser only</div>
-  </aside>
-  <div class="main">
-   <div class="top"><span class="crumb">${label}</span>
-    <div class="who"><span class="nm">${esc(u.name)}</span><span class="av" aria-hidden="true">${esc(u.name[0])}</span><button class="btn o sm" data-act="logout">${icon('logout')}Log out</button></div>
-   </div>
-   <div id="view"></div>
+/* ---------- Profile and listing cards ---------- */
+function buyerCard(b,viewer,compact=true){
+ const crops=myCrops();
+ const match=b.interests.filter(i=>crops.includes(i)).length;
+ return `<article class="card" style="padding:14px" aria-label="${esc(b.name)}">
+  <div class="row" style="align-items:flex-start;flex-wrap:nowrap">
+   <div style="display:flex;gap:10px;min-width:0">${avatar(b,'sm')}<div style="min-width:0"><b style="display:block;font-size:14.5px;line-height:1.25">${esc(b.name)}</b><span class="mut">${esc(b.business)}</span></div></div>
+   ${b.verified?`<span class="badge-verified">${icon('badge-check')}Verified</span>`:`<span class="badge-pending">${icon('clock')}Pending</span>`}
   </div>
- </div>`;
+  <div style="margin:10px 0 8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">${locOf(b)}</div>
+  <div class="small mut" style="margin-bottom:6px">Interested in</div>
+  <div style="display:flex;flex-wrap:wrap;gap:5px">${chips(b.interests)}</div>
+  ${!compact?`<p class="mut small" style="margin-top:10px">${match?`Buys ${match} of the crops you grow.`:'No overlap with your crops yet.'} Contact: ${esc(b.contact)}</p>`:''}
+  <div style="margin-top:10px">${distLine(viewer,b)}</div>
+  <div class="row" style="margin-top:12px;gap:8px;flex-wrap:nowrap"><button class="btn o sm" style="flex:1" data-act="profile" data-id="${b.id}">${icon('eye')}View profile</button><button class="btn p sm" style="flex:1" data-act="offer-open" data-id="${b.id}">${icon('send')}Send offer</button></div>
+ </article>`;
+}
+function farmerCard(f,viewer){
+ const act=db.listings.filter(l=>l.farmer===f.id&&l.status==='active');
+ const saved=db.savedFarmers.includes(f.id);
+ return `<article class="card" style="display:flex;flex-direction:column;gap:12px">
+  <div class="row" style="align-items:flex-start;flex-wrap:nowrap"><div style="display:flex;gap:10px;min-width:0">${avatar(f,'')}<div style="min-width:0"><b style="display:block;line-height:1.25">${esc(f.farm)}</b><span class="mut">${esc(f.name)}</span></div></div>${verifiedOf(f)}</div>
+  ${locOf(f)}
+  <div class="kv2"><div><span>Active listings</span><b>${act.length}</b></div><div><span>Land</span><b>${f.acres} acres</b></div><div><span>Crops</span><b>${esc([...new Set(act.map(l=>l.crop))].join(', ')||'—')}</b></div><div><span>Member since</span><b>${fmtDate(f.joined)}</b></div></div>
+  ${distLine(viewer,f)}
+  <div class="row" style="gap:8px;flex-wrap:nowrap"><button class="btn o sm" style="flex:1" data-act="profile" data-id="${f.id}">${icon('eye')}Profile</button><button class="btn ${saved?'on':'o'} sm" data-act="save-farmer" data-id="${f.id}" aria-pressed="${saved}">${icon('heart')}${saved?'Saved':'Save'}</button></div>
+ </article>`;
+}
+function productCard(l,viewer){
+ const f=userById(l.farmer)||{};
+ const saved=db.saved.includes(l.id);
+ return `<article class="card product" aria-label="${esc(l.name)}">
+  <a href="${BASE}buyer/product.html?id=${l.id}" data-act="product" data-id="${l.id}" style="text-decoration:none;display:block;position:relative">${photoOf(l)}<span style="position:absolute;top:10px;left:10px">${gradeChip(l.grade,l.conf)}</span></a>
+  <div style="min-width:0"><div class="name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(l.name)}</div><span class="mut small">by ${esc(f.farm||f.name)}</span></div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">${locOf(f)}${verifiedOf(f)}</div>
+  ${distLine(viewer,f)}
+  <div class="kv2"><div><span>Available</span><b>${num(l.qty)} kg</b></div><div><span>Harvest</span><b>${fmtDate(l.harvest)}</b></div><div><span>Asking price</span><b>${fmtK(l.ask)}/kg</b></div><div><span>Recommended</span><b style="color:var(--brand)">${fmtK(recPrice(l.crop,l.district))}/kg</b></div></div>
+  <div class="row" style="gap:8px;flex-wrap:nowrap;margin-top:auto"><button class="btn o sm" style="flex:1" data-act="product" data-id="${l.id}">View details</button><button class="btn p sm" style="flex:1" data-act="bid-open" data-id="${l.id}">Place bid</button><button class="btn o sm ${saved?'on':''}" data-act="save" data-id="${l.id}" aria-pressed="${saved}" aria-label="${saved?'Remove from saved':'Save product'}">${icon('heart')}</button></div>
+ </article>`;
+}
+function myCrops(){
+ const mine=db.listings.filter(l=>l.farmer===db.session).map(l=>l.crop);
+ return mine.length?[...new Set(mine)]:['Tomato'];
 }
 
-/* ---------- Dialogs ---------- */
+/* ---------- Nearby Buyers panel (farmer right-hand column) ---------- */
+function nearbyPanel(){
+ const v=me();
+ const crops=myCrops();
+ let list=db.users.filter(u=>u.role==='buyer'&&u.status==='active');
+ list=list.map(b=>({b,d:distanceBetween(v,b),m:b.interests.filter(i=>crops.includes(i)).length}));
+ const tabs={nearby:'Nearby',all:'All',retailers:'Retailers',wholesalers:'Wholesalers',processors:'Food processors'};
+ const typeOf={retailers:'Retailer',wholesalers:'Wholesaler',processors:'Food Processor'};
+ if(NB.tab==='nearby')list=list.filter(x=>x.d!=null&&x.d<=200);
+ if(typeOf[NB.tab])list=list.filter(x=>x.b.business===typeOf[NB.tab]);
+ if(NB.sort==='distance')list.sort((a,b)=>(a.d==null)-(b.d==null)||(a.d||0)-(b.d||0));
+ else list.sort((a,b)=>b.m-a.m||((a.d==null)-(b.d==null))||(a.d||0)-(b.d||0));
+ const hidden=v.locShare===false;
+ return `<section class="card" aria-labelledby="nb-title">
+  <div class="row" style="margin-bottom:10px"><div><h2 id="nb-title" style="margin:0">Nearby buyers</h2><p class="mut small">Verified buyers near ${esc(v.district)}</p></div>${icon('map-pin')}</div>
+  <div class="tabs" role="tablist" style="margin:8px 0 10px;width:100%">${Object.entries(tabs).map(([k,t])=>`<button role="tab" aria-selected="${NB.tab===k}" data-act="nb-tab" data-t="${k}">${t}</button>`).join('')}</div>
+  <div class="row" style="margin-bottom:12px"><label class="sr" for="nb-sort">Sort buyers</label><select id="nb-sort" data-nb="sort" style="width:auto;min-width:0;font-size:13px;padding:6px 10px;min-height:34px">
+    <option value="distance" ${NB.sort==='distance'?'selected':''}>Sort by distance</option><option value="interest" ${NB.sort==='interest'?'selected':''}>Sort by product interest</option></select>
+    <span class="mut small">${list.length} buyer${list.length===1?'':'s'}</span></div>
+  ${hidden?`<div class="note info small" style="margin-bottom:12px">Location sharing is off, so distances are hidden. Turn it on in Settings.</div>`:''}
+  <div class="stack" style="gap:10px">${list.slice(0,5).map(x=>buyerCard(x.b,v)).join('')||(hidden&&NB.tab==='nearby'?emptyState('Nearby needs your location','Distances are hidden because location sharing is off. Turn it on in Settings, or choose All.','<button class="btn o sm" data-act="tab-all">Show all buyers</button>','map'):emptyState('No buyers in this view','Try a different tab.','','map'))}</div>
+  <button class="btn o w" style="margin-top:12px" data-act="nav" data-v="buyers">View all buyers</button>
+  <p class="hint">Distances are approximate, measured between district centres. Exact addresses are never shown.</p>
+ </section>`;
+}
+
+/* ---------- Charts ---------- */
+function chartBox(id,make,cls='',aria='Chart'){
+ CHARTS.push({id,make});
+ return `<div class="chart ${cls}"><canvas id="${id}" role="img" aria-label="${esc(aria)}"></canvas></div>`;
+}
+function cssVar(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
+function mountCharts(){
+ if(typeof Chart==='undefined'){
+  document.querySelectorAll('canvas').forEach(c=>{const p=c.parentElement;if(p&&!p.querySelector('.chart-fallback'))p.insertAdjacentHTML('beforeend','<div class="chart-fallback mut small" style="position:absolute;inset:0;display:grid;place-items:center">Chart library unavailable offline.</div>')});
+  return;
+ }
+ const C={brand:cssVar('--brand'),brand2:cssVar('--brand-2'),accent:cssVar('--accent'),grid:cssVar('--line-2'),mut:cssVar('--mut-ink'),ink:cssVar('--ink'),ok:cssVar('--ok'),bad:cssVar('--bad'),warn:cssVar('--warn'),info:cssVar('--info'),elev:cssVar('--elev')};
+ Chart.defaults.font.family='Inter, system-ui, sans-serif';
+ Chart.defaults.color=C.mut;
+ Chart.defaults.borderColor=C.grid;
+ CHARTS.forEach(({id,make})=>{
+  const el=document.getElementById(id);if(!el)return;
+  try{new Chart(el,make(C))}catch(e){}
+ });
+}
+
+/* ---------- Dialogs and notifications ---------- */
+function toast(msg,ok){
+ const t=document.createElement('div');
+ t.className='toast'+(ok?' ok':'');t.setAttribute('role','status');t.textContent=msg;
+ $('#toasts').appendChild(t);
+ setTimeout(()=>t.remove(),2800);
+}
+function openM(html){const m=$('#modal');m.innerHTML=`<div class="mbox" role="dialog" aria-modal="true"><button class="x" data-act="closem" aria-label="Close">${icon('x')}</button>${html}</div>`;m.classList.add('open')}
+function closeM(){$('#modal').classList.remove('open')}
 function confirmM(d){
  openM(`<h2>${d.title}</h2><p class="mut" style="margin:6px 0 22px;font-size:14px">${d.text}</p>
  <div class="row end"><button class="btn o" data-act="closem">Cancel</button><button class="btn ${d.danger?'dx':'p'}" data-act="yes" data-then="${d.then}" data-id="${d.id}">${d.label}</button></div>`);
 }
-
-/* ---------- Listing pieces ---------- */
-function listingTable(arr,actions,admin){
- if(!arr.length)return emptyState('No listings yet','Run a quality check on a produce photo, then publish it to reach buyers.','<button class="btn p" data-act="nav" data-v="inspect">New listing</button>');
- return `<div class="tablewrap"><table><thead><tr><th>Crop</th><th class="num">Quantity</th><th>Grade</th><th>Location</th><th class="num">Asking / qtl</th><th>Status</th>${actions?'<th></th>':''}</tr></thead><tbody>
- ${arr.map(l=>`<tr><td><div class="crop">${cropTile(l.crop,34)}${esc(l.crop)}</div></td><td class="num">${num(l.qty)} kg</td><td>${esc(l.grade)}</td><td>${esc(l.loc)}</td><td class="num">${fmt(l.ask)}</td><td>${statusTag(l.status)}</td>${actions?`<td class="act">${rowAction(l,admin)}</td>`:''}</tr>`).join('')}
- </tbody></table></div>`;
-}
-function rowAction(l,admin){
- if(l.status==='active'){
-  return admin
-   ?`<button class="btn o sm" data-act="ask" data-title="Hide this listing?" data-text="Buyers will stop seeing it until you restore it." data-label="Hide listing" data-then="mod" data-id="${l.id}" data-danger="1">Hide</button>`
-   :`<button class="btn o sm" data-act="ask" data-title="Withdraw this listing?" data-text="Buyers will no longer see it. You can relist it later." data-label="Withdraw" data-then="mod" data-id="${l.id}">Withdraw</button>`;
- }
- if(l.status==='hidden'&&!admin)return '<span class="mut">Hidden by admin</span>';
- if(l.status==='withdrawn'||l.status==='hidden')return `<button class="btn o sm" data-act="mod" data-id="${l.id}">Restore</button>`;
- return '';
-}
-function salesTable(arr,buyerView){
- return `<div class="tablewrap"><table><thead><tr><th>Crop</th><th>${buyerView?'Seller':'Buyer'}</th><th class="num">Quantity</th><th class="num">Price / qtl</th><th class="num">Total</th><th>Delivery</th><th>Date</th></tr></thead><tbody>
- ${arr.map(b=>{
-   const L=listingOf(b.listing);
-   const seller=L&&userById(L.farmer)?userById(L.farmer).name:'—';
-   return `<tr><td>${L?esc(L.crop):'—'}</td><td>${esc(buyerView?seller:b.buyer)}</td><td class="num">${num(b.qty)} kg</td><td class="num">${fmt(b.price)}</td><td class="num"><b>${fmt(b.price*b.qty/100)}</b></td><td>${esc(b.deliver)}</td><td class="mut">${esc(b.t)}</td></tr>`;
-  }).join('')}
- </tbody></table></div>`;
-}
-function reportHTML(I){
- const conf=MODEL_CONF,low=conf<75;
- const ind=[['Colour uniformity',92],['Surface defects (fewer is better)',97],['Size uniformity',88],['Freshness signals',90]];
- return `<div class="row"><h2>Quality report</h2>${sampleTag()}</div>
- ${low?`<div class="note warn">Low model confidence. Request a manual inspection before listing.<br><button class="btn o sm" data-act="manual" style="margin-top:8px">Request manual inspection</button></div>`:''}
- <div class="kvs" style="margin:16px 0 20px">
-  ${kv('Detected crop',esc(I.crop))}
-  ${kv('Quality grade','A','Illustrative','ok')}
-  ${kv('Model confidence',conf+'%','Illustrative')}
-  ${kv('Visual condition','Good')}
- </div>
- <div class="mut" style="margin-bottom:2px">Quality indicators</div>
- ${ind.map(([l,v])=>`<div class="row" style="margin-top:10px;font-size:14px"><span>${l}</span><b>${v}</b></div><div class="bar"><i style="width:${v}%"></i></div>`).join('')}
- <div class="rec"><b>Suggested use:</b> suitable for a standard listing of ${num(I.qty)} kg from ${esc(I.loc)}. Price guidance is on the Price intelligence page.</div>
- <div class="form" style="margin-top:18px;grid-template-columns:1fr">
-  <div class="form-field"><label for="ask">Asking price per quintal (₹)</label><input id="ask" type="number" min="1" inputmode="numeric" data-i="ask" value="${I.ask||REF_PRICE}"><p class="hint">Mandi reference today: ${fmt(REF_PRICE)} per quintal (sample).</p></div>
- </div>
- <button class="btn g w" data-act="publish">${icon('upload')}Publish listing</button>
- <div class="note">Scores are illustrative until the trained model is connected.</div>`;
-}
-function card(l){
- const saved=db.saved.includes(l.id),buyer=db.session&&me().role==='buyer';
- return `<article class="card hov listing"><div class="pimg">${mediaInner(l)}</div>
-  <div class="row"><b style="font-size:16px">${esc(l.crop)}</b><span class="tag ok">Grade ${esc(l.grade)}</span></div>
-  <div class="mut meta">${icon('pin')}${esc(l.loc)} · ${num(l.qty)} kg available</div>
-  <div class="row" style="margin-top:14px"><span><b class="price">${fmt(l.ask)}</b> <span class="mut">per quintal</span></span>${l.verified?'<span class="tag info">AI checked</span>':''}</div>
-  <div class="row" style="margin-top:14px;gap:8px;flex-wrap:nowrap"><button class="btn p sm" style="flex:1" data-act="detail" data-id="${l.id}">View details</button>${buyer?`<button class="btn o sm ${saved?'on':''}" data-act="save" data-id="${l.id}" aria-pressed="${saved}" aria-label="${saved?'Remove from saved':'Save listing'}">${icon('heart')}</button>`:''}</div>
- </article>`;
-}
-function gridHTML(){
- const q=F.q.trim().toLowerCase();
- const L=db.listings.filter(l=>l.status==='active'&&l.crop.toLowerCase().includes(q)&&(!F.loc||l.loc===F.loc)&&(!F.grade||l.grade===F.grade)&&l.qty>=(+F.minQ||0));
- L.sort((a,b)=>F.sort==='asc'?a.ask-b.ask:b.ask-a.ask);
- return L.map(card).join('')||`<div class="card" style="grid-column:1/-1">${emptyState('No listings match these filters','Try a wider location, a lower minimum quantity or a different crop.','','store')}</div>`;
-}
-function marketView(){
- const locs=[...new Set(db.listings.map(l=>l.loc))].sort();
- const buyer=me().role==='buyer';
- return `${pageHead(buyer?'Explore produce':'Marketplace',buyer?'Verified listings from farmers. Open one to read its quality summary and place a bid.':'All active listings on the platform.')}
- <div class="card" style="margin-bottom:16px"><div class="form">
-  <div class="form-field span2"><label for="fq">Search crop</label><input id="fq" data-f="q" placeholder="Tomato, onion…" value="${esc(F.q)}"></div>
-  <div class="form-field"><label for="fl">Location</label><select id="fl" data-f="loc"><option value="">All locations</option>${locs.map(l=>`<option ${F.loc===l?'selected':''}>${esc(l)}</option>`).join('')}</select></div>
-  <div class="form-field"><label for="fg">Grade</label><select id="fg" data-f="grade"><option value="">All grades</option>${['A','B','C'].map(g=>`<option value="${g}" ${F.grade===g?'selected':''}>Grade ${g}</option>`).join('')}</select></div>
-  <div class="form-field"><label for="fm">Minimum quantity (kg)</label><input id="fm" type="number" min="0" inputmode="numeric" data-f="minQ" value="${F.minQ||''}" placeholder="0"></div>
-  <div class="form-field"><label for="fs">Price</label><select id="fs" data-f="sort"><option value="asc" ${F.sort==='asc'?'selected':''}>Lowest first</option><option value="desc" ${F.sort==='desc'?'selected':''}>Highest first</option></select></div>
- </div></div>
- <div class="grid3" id="grid">${gridHTML()}</div>`;
-}
-function detailHTML(l){
- const f=userById(l.farmer)||{name:'Farmer'};
- const buyer=me().role==='buyer',bids=bidsOn(l.id);
- return `<div class="row"><div><h2 style="margin:0 0 4px">${esc(l.crop)} · Grade ${esc(l.grade)}</h2><p class="mut" style="margin:0">${esc(f.name)} · ${esc(l.loc)}</p></div>${l.verified?'<span class="tag info">AI checked</span>':''}</div>
- <div class="pimg" style="height:180px;margin:16px 0 18px">${mediaInner(l)}</div>
- <div class="kvs" style="margin-bottom:20px">${kv('Asking price',fmt(l.ask),'per quintal')}${kv('Available',num(l.qty)+' kg','')}${kv('Quality','Grade '+esc(l.grade),'Illustrative summary')}</div>
- <h2>Current bids (${bids.length})</h2>
- ${bids.length?bids.map(b=>`<div class="lrow"><span><b>${esc(b.buyer)}</b><span class="mut"> · ${esc(b.deliver)}</span></span><span>${fmt(b.price)}/qtl · ${num(b.qty)} kg ${statusTag(b.status)}</span></div>`).join(''):'<p class="mut">No bids yet.</p>'}
- ${buyer&&l.status==='active'?`<h2 style="margin-top:22px">Place a bid</h2>
-  <div class="form">
-   <div class="form-field"><label for="bp">Price per quintal (₹)</label><input id="bp" type="number" min="1" inputmode="numeric" value="${l.ask}"></div>
-   <div class="form-field"><label for="bq">Quantity (kg)</label><input id="bq" type="number" min="1" max="${l.qty}" inputmode="numeric" value="${l.qty}"></div>
-   <div class="form-field"><label for="bl">Delivery location</label><input id="bl" value="Bengaluru APMC"></div>
-  </div>
-  <p class="hint">Prices are per quintal (100 kg). Total = price × kg ÷ 100.</p>
-  <button class="btn p w" data-act="placebid" data-id="${l.id}">Submit bid</button>`:''}`;
+function profileModal(u){
+ const isFarmer=u.role==='farmer';
+ const listings=db.listings.filter(l=>l.farmer===u.id&&l.status==='active');
+ const phone=u.phone?u.phone.slice(0,5)+' •••••':'Not shared';
+ return `<div class="row" style="align-items:flex-start;flex-wrap:nowrap;padding-right:30px">
+  <div style="display:flex;gap:12px;min-width:0">${avatar(u,'lg')}<div><h2 style="margin:0 0 4px">${esc(isFarmer?u.farm:u.name)}</h2><p class="mut">${esc(isFarmer?u.name+' · Farmer':u.business+' · Contact: '+u.contact)}</p></div></div>
+  ${verifiedOf(u)}</div>
+  <div class="kv2" style="margin:18px 0"><div><span>Location</span><b>${esc(u.city)}, ${esc(u.district)}, ${esc(u.state)}</b></div><div><span>Member since</span><b>${fmtDate(u.joined)}</b></div><div><span>${isFarmer?'Land':'Business type'}</span><b>${isFarmer?u.acres+' acres':esc(u.business)}</b></div><div><span>Phone</span><b>${phone}</b></div></div>
+  <h3>${isFarmer?'Active listings':'Interested in'}</h3>
+  ${isFarmer?(listings.length?listings.map(l=>`<div class="lrow"><span><b>${esc(l.name)}</b><span class="mut"> · ${num(l.qty)} kg</span></span><span>${gradeChip(l.grade)} ${fmtK(l.ask)}/kg</span></div>`).join(''):'<p class="mut">No active listings.</p>'):`<div style="display:flex;gap:6px;flex-wrap:wrap">${chips(u.interests)}</div>`}
+  <p class="hint" style="margin-top:14px">Contact details are shared only after a bid or offer is accepted. Locations are shown at city and district level.</p>`;
 }
 
-/* ---------- Views ---------- */
-const VIEWS={
- 'farmer.overview'(){
-  const mine=myListings(),ids=mine.map(l=>l.id),mv=movement();
-  const offers=db.bids.filter(b=>ids.includes(b.listing)&&b.status==='pending').length;
-  const sold=db.bids.filter(b=>ids.includes(b.listing)&&b.status==='accepted').length;
-  const qty=mine.filter(l=>l.status==='active').reduce((a,l)=>a+l.qty,0);
-  const recent=db.bids.filter(b=>ids.includes(b.listing)).slice(0,4);
-  return `${pageHead(`${greeting()}, ${esc(me().name.split(' ')[0])}`,'Your listings, bids and price context at a glance.',`<button class="btn p" data-act="nav" data-v="inspect">${icon('scan')}New listing</button>`)}
-  ${statCards([['Active listings',mine.filter(l=>l.status==='active').length],['Quantity listed (kg)',qty],['Open bids',offers],['Completed sales',sold]])}
-  <div class="grid2">
-   <div class="card"><div class="row"><h2>Price snapshot</h2>${sampleTag()}</div>
-    <div class="kvs" style="margin-bottom:18px">
-     ${kv('Mandi reference',fmt(REF_PRICE),'per quintal')}
-     ${kv('Suggested price',fmt(REC_PRICE),'per quintal','brand')}
-     ${kv('Expected range',fmt(PRED_RANGE[0])+'–'+num(PRED_RANGE[1]),'next period')}
-     ${kv('Price movement',mv.text,'vs previous month',mv.up?'ok':'bad')}
+/* ---------- App shell ---------- */
+function renderShell(){
+ const u=me();
+ $('#app').innerHTML=`<div class="app">
+  <aside class="side" id="side" aria-label="Main navigation">
+   <a class="brand" href="${BASE}${u.role}/dashboard.html"><span class="mark">${icon('leaf')}</span><span>AgriVision <span class="ai">AI</span></span></a>
+   <nav id="nav" aria-label="${u.role} navigation"></nav>
+   <div class="foot">Prototype · demonstration data<br>Saved in this browser only</div>
+  </aside>
+  <div class="scrim" id="scrim" data-act="menu"></div>
+  <div class="main">
+   <header class="topbar">
+    <button class="iconbtn menu-btn" data-act="menu" aria-label="Open navigation" aria-controls="side">${icon('menu')}</button>
+    <div class="greet" id="greet" style="font-weight:600;white-space:nowrap" aria-live="polite"></div>
+    <form class="search" data-form="search" role="search"><label class="sr" for="gs">Search</label>${icon('search')}<input id="gs" name="q" type="search" placeholder="" autocomplete="off"></form>
+    <div class="top-right">
+     <div class="seg" role="group" aria-label="Theme">
+      <button data-act="theme" data-t="light" aria-pressed="false">${icon('sun')}Light</button>
+      <button data-act="theme" data-t="dark" aria-pressed="false">${icon('moon')}Dark</button>
+      <button data-act="theme" data-t="system" aria-pressed="false">${icon('monitor')}System</button>
+     </div>
+     <div class="pop-wrap">
+      <button class="icon-btn" data-act="pop" data-p="notif" aria-label="Notifications" aria-expanded="false" id="bell">${icon('bell')}<span class="dot" id="dot"></span></button>
+      <div class="pop" data-pop="notif" hidden><div class="head row"><b>Notifications</b><button class="btn g sm" data-act="mark-read">Mark all read</button></div><div id="notif-list"></div></div>
+     </div>
+     <div class="pop-wrap">
+      <button class="user-btn" data-act="pop" data-p="user" aria-label="Account menu" aria-expanded="false" id="userbtn"></button>
+      <div class="pop" data-pop="user" hidden id="usermenu"></div>
+     </div>
     </div>
-    <button class="btn o w" data-act="nav" data-v="price">Open price intelligence</button></div>
-   <div class="card"><h2>Regional demand</h2>
-    ${DEMAND.map(([r,v])=>`<div class="dem"><div class="row"><span>${r}</span><b>${v}</b></div><div class="bar"><i style="width:${v}%"></i></div></div>`).join('')}
-    <p class="mut" style="margin-top:8px">Demand index · sample data</p></div>
+   </header>
+   <div class="content" id="content"><div class="main-col" id="view"></div><aside class="aside" id="aside" aria-label="Side panel"></aside></div>
   </div>
-  <div class="grid2">
-   <div class="card"><div class="row"><h2>Price trend, ₹ per quintal</h2>${sampleTag()}</div><div class="chart"><canvas id="cTrend" role="img" aria-label="Historical mandi price trend"></canvas></div></div>
-   <div class="card"><h2>Latest bids</h2>
-    ${recent.length?recent.map(b=>`<div class="lrow"><div><b>${esc(b.buyer)}</b><div class="mut">${fmt(b.price)}/qtl · ${num(b.qty)} kg</div></div>${statusTag(b.status)}</div>`).join(''):emptyState('No bids yet','Bids on your listings will appear here.','','tag')}
-    <button class="btn o w" data-act="nav" data-v="bids">Review bids</button></div>
-  </div>
-  <div class="card"><div class="row"><h2>Your listings</h2></div>${listingTable(mine)}</div>`;
- },
- 'farmer.produce'(){
-  return `${pageHead('My produce','Listings you have published. Withdraw a listing to pause it, and restore it when you are ready.','<button class="btn p" data-act="nav" data-v="inspect">New listing</button>')}
-  <div class="card">${listingTable(myListings(),true)}</div>`;
- },
- 'farmer.inspect'(){
-  const I=db.insp||(db.insp={crop:'Tomato',qty:100,loc:'Kolar, Karnataka',st:'idle',img:null,ask:REF_PRICE});
-  const step=!I.img?0:I.st==='done'?2:1;
-  const steps=['Add photo','Assess quality','List'].map((s,i)=>`<div class="step ${i<step?'done':''} ${i===step?'on':''}"><span>${i<step?icon('check'):i+1}</span>${s}</div>`).join('');
-  const photo=I.img
-   ?`<div class="photo"><img src="${I.img}" alt="Uploaded produce photo">${I.st==='done'?'<svg class="overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><ellipse cx="34" cy="42" rx="11" ry="9"/><ellipse cx="66" cy="60" rx="8" ry="7"/></svg>':''}</div>
-     <div class="row" style="margin-top:12px"><span class="mut">${I.st==='done'?'Dashed areas are illustrative highlights, not model output.':'Photo ready for analysis.'}</span><button class="btn o sm" data-act="pick">Replace photo</button></div>`
-   :`<div class="drop" id="drop" data-act="pick" role="button" tabindex="0" aria-label="Choose a produce photo"><div class="dz-ico">${icon('upload')}</div><b>Add a produce photo</b><span class="mut">Drag it here, or tap to use your camera or gallery. JPG or PNG.</span></div>`;
-  let res;
-  if(I.st==='scan')res=`<div class="scan">${I.img?`<img src="${I.img}" alt="">`:''}</div><p class="mut" style="text-align:center;margin:14px 0 4px">Checking colour, texture and visible defects…</p><div class="skel"></div><div class="skel" style="width:70%"></div>`;
-  else if(I.st==='done')res=reportHTML(I);
-  else res=`<div class="row"><h2>What the check looks at</h2></div>
-   <ul class="checks">${[['Colour uniformity','Even ripeness and colour across the lot'],['Surface defects','Cuts, bruises, spots and cracks'],['Size uniformity','Variation that affects grading'],['Freshness signals','Firmness and visible wilting']].map(([t,s])=>`<li>${icon('check')}<span><b>${t}</b><br><span class="mut">${s}</span></span></li>`).join('')}</ul>
-   <div class="note">For best results: shoot in daylight on a plain background, keep the item in focus, and include a representative sample of the lot.</div>`;
-  return `${pageHead('AI quality check','Assess produce from a photo and get a grade you can use when listing.')}
-  <div class="stepper" aria-label="Progress">${steps}</div>
-  <div class="grid2">
-   <div class="card">${photo}<input type="file" id="up" accept="image/*" data-u="1" hidden>
-    <div class="form" style="margin-top:16px">
-     <div class="form-field"><label for="ic">Crop</label><select id="ic" data-i="crop">${CROPS.map(c=>`<option ${I.crop===c?'selected':''}>${c}</option>`).join('')}</select></div>
-     <div class="form-field"><label for="iq">Quantity (kg)</label><input id="iq" type="number" min="1" inputmode="numeric" data-i="qty" value="${I.qty}"></div>
-     <div class="form-field"><label for="il">Location</label><select id="il" data-i="loc">${FARM_LOCS.map(c=>`<option ${I.loc===c?'selected':''}>${c}</option>`).join('')}</select></div>
-    </div>
-    <button class="btn g w" data-act="analyze" ${!I.img||I.st==='scan'?'disabled':''}>${I.st==='scan'?'Analyzing…':'Analyze produce'}</button>
-    ${I.img?'':'<p class="hint" style="text-align:center">Add a photo to run the analysis.</p>'}
-   </div>
-   <div class="card">${res}</div>
-  </div>`;
- },
- 'farmer.price'(){
-  const sel=(list,val,key)=>`<select id="p-${key}" data-p="${key}">${list.map(x=>`<option ${x===val?'selected':''}>${x}</option>`).join('')}</select>`;
-  const mv=movement();
-  const factors=[['Historical price movement',70,'+6%'],['Produce quality (Grade A)',62,'+4%'],['Regional demand',66,'+5%'],['Seasonality',30,'−2%'],['Transport cost',34,'−3%']];
-  const pos=Math.round((REC_PRICE-PRED_RANGE[0])/(PRED_RANGE[1]-PRED_RANGE[0])*100);
-  return `${pageHead('Price intelligence','Mandi price history, a short-term forecast and the reasons behind the suggested price.',sampleTag())}
-  <div class="card" style="margin-bottom:16px"><div class="form">
-   <div class="form-field"><label for="p-crop">Crop</label>${sel(CROPS,PR.crop,'crop')}</div>
-   <div class="form-field"><label for="p-mkt">Market</label>${sel(MARKETS,PR.mkt,'mkt')}</div>
-   <div class="form-field"><label for="p-range">Period</label><select id="p-range" data-p="range"><option value="6" ${PR.range==6?'selected':''}>Last 6 months</option><option value="12" ${PR.range==12?'selected':''}>Last 12 months</option></select></div>
-  </div><p class="hint">This prototype shows the same sample series for every crop and market.</p></div>
-  ${statRow([
-    ['Mandi reference',fmt(REF_PRICE),'per quintal'],
-    ['Suggested selling price',fmt(REC_PRICE),'per quintal','brand'],
-    ['Expected range',fmt(PRED_RANGE[0])+'–'+num(PRED_RANGE[1]),'next period'],
-    ['Transport cost',fmt(Math.round(TRANS_RATE*70)),'per quintal, 70 km']
-  ])}
-  <div class="grid2">
-   <div class="card"><div class="row"><h2>Historical and forecast price, ₹ per quintal</h2>${sampleTag()}</div><div class="chart"><canvas id="cTrend" role="img" aria-label="Historical and forecast mandi price"></canvas></div></div>
-   <div class="card xai"><h2>What drives the suggestion</h2>
-    <p class="mut" style="margin:-6px 0 14px">Bar length shows relative influence. The figure is the estimated effect on price.</p>
-    <ul>${factors.map(([l,w,d])=>`<li><div class="row"><span style="font-size:14px">${l}</span><b class="${d.startsWith('−')?'neg':'pos'}">${d}</b></div><div class="bar ${d.startsWith('−')?'neg':''}"><i style="width:${w}%"></i></div></li>`).join('')}</ul>
-    <div style="margin-top:14px"><div class="row"><span class="mut">Expected range</span><span class="tag warn">Confidence ${PRED_CONF}% · sample</span></div>
-     <div class="range"><i></i><b style="left:${pos}%"></b></div>
-     <div class="scale"><span>${fmt(PRED_RANGE[0])}</span><span>Suggested ${fmt(REC_PRICE)}</span><span>${fmt(PRED_RANGE[1])}</span></div></div>
-   </div>
-  </div>
-  <div class="card"><div class="row"><h2>Regional demand forecast</h2>${sampleTag()}</div><div class="chart" style="height:220px"><canvas id="cDemand" role="img" aria-label="Regional demand index"></canvas></div></div>`;
- },
- 'farmer.market'(){return marketView()},
- 'buyer.explore'(){return marketView()},
- 'farmer.bids'(){
-  const mine=myListings();
-  if(!mine.length)return `${pageHead('Bids','Compare bids on each listing, then accept one.')}<div class="card">${emptyState('No listings yet','Publish a produce listing to start receiving bids.','<button class="btn p" data-act="nav" data-v="inspect">New listing</button>','tag')}</div>`;
-  const L=currentBidListing();
-  const list=bidsOn(L.id).slice().sort((a,b)=>b.price-a.price);
-  const best=list.find(b=>b.status==='pending');
-  const open=list.filter(b=>b.status==='pending').length;
-  const top=best?best.price:null;
-  return `${pageHead('Bids','Accepting a bid closes the listing and declines the other open bids.',`<div style="min-width:260px"><label for="bl-sel">Listing</label><select id="bl-sel" data-p="bl">${mine.map(x=>`<option value="${x.id}" ${x.id===L.id?'selected':''}>${esc(x.crop)} · ${num(x.qty)} kg · ${esc(x.loc)}</option>`).join('')}</select></div>`)}
-  ${statRow([
-    ['Asking price',fmt(L.ask),'per quintal'],
-    ['Highest bid',top?fmt(top):'—',top?((top-L.ask)>=0?'+':'−')+fmt(Math.abs(top-L.ask))+' vs asking':'No open bids','ok'],
-    ['Open bids',open,'awaiting a decision'],
-    ['Listing status',statusTag(L.status),'']
-  ])}
-  <div class="card" style="margin-bottom:16px">${list.length?`<div class="tablewrap"><table><thead><tr><th>Buyer</th><th class="num">Bid / qtl</th><th class="num">vs asking</th><th class="num">Quantity</th><th>Delivery</th><th>Received</th><th>Status</th><th></th></tr></thead><tbody>
-   ${list.map(b=>{const d=b.price-L.ask;return `<tr><td><b>${esc(b.buyer)}</b>${best&&b.id===best.id?' <span class="tag ok">Highest</span>':''}</td><td class="num">${fmt(b.price)}</td><td class="num ${d>=0?'pos':'neg'}">${d>=0?'+':'−'}${fmt(Math.abs(d))}</td><td class="num">${num(b.qty)} kg</td><td>${esc(b.deliver)}</td><td class="mut">${esc(b.t)}</td><td>${statusTag(b.status)}</td><td class="act">${b.status==='pending'?`<button class="btn g sm" data-act="ask" data-title="Accept this bid?" data-text="The listing will be marked sold and other open bids will be declined." data-label="Accept bid" data-then="doaccept" data-id="${b.id}">Accept</button> <button class="btn d sm" data-act="ask" data-title="Reject this bid?" data-text="The buyer will be told the bid was not accepted." data-label="Reject bid" data-then="doreject" data-id="${b.id}" data-danger="1">Reject</button>`:''}</td></tr>`}).join('')}
-  </tbody></table></div>`:emptyState('No bids yet','Buyers can see this listing in Explore produce. Bids will appear here.','','tag')}</div>
-  <div class="card"><h2>Bid against asking price</h2><p class="mut" style="margin:-4px 0 12px">How far each bid is above or below your asking price, in ₹ per quintal.</p><div class="chart" style="height:${Math.max(150,list.length*52+40)}px"><canvas id="cBid" role="img" aria-label="Bids compared with the asking price"></canvas></div></div>`;
- },
- 'farmer.sales'(){
-  const ids=myListings().map(l=>l.id);
-  const done=db.bids.filter(b=>ids.includes(b.listing)&&b.status==='accepted');
-  return `${pageHead('Sales history','Completed sales from accepted bids.')}<div class="card">${done.length?salesTable(done):emptyState('No completed sales yet','Accepted bids appear here as sales.','','receipt')}</div>`;
- },
- 'buyer.overview'(){
-  const mine=db.bids.filter(b=>b.buyerId===db.session);
-  const avail=db.listings.filter(l=>l.status==='active').reduce((a,l)=>a+l.qty,0);
-  const live=db.listings.filter(l=>l.status==='active').slice(0,5);
-  return `${pageHead(`${greeting()}, ${esc(me().name.split(' ')[0])}`,'Find verified produce, compare bids and place your own.',`<button class="btn p" data-act="nav" data-v="explore">${icon('store')}Explore produce</button>`)}
-  ${statCards([['Open bids',mine.filter(b=>b.status==='pending').length],['Accepted bids',mine.filter(b=>b.status==='accepted').length],['Available produce (kg)',avail],['Saved listings',db.saved.length]])}
-  <div class="grid2">
-   <div class="card"><h2>Recent activity</h2><div class="feed">${db.log.slice(0,6).map(x=>`<div>${esc(x)}</div>`).join('')}</div></div>
-   <div class="card"><h2>Available produce</h2>
-    ${live.length?live.map(l=>`<div class="lrow"><div class="crop">${cropTile(l.crop,34)}<div><b>${esc(l.crop)}</b><div class="mut">${num(l.qty)} kg · Grade ${esc(l.grade)} · ${esc(l.loc)}</div></div></div><button class="btn o sm" data-act="detail" data-id="${l.id}">View</button></div>`).join(''):emptyState('Nothing listed right now','Check back soon.','','store')}
-    <button class="btn p w" data-act="nav" data-v="explore">Explore all produce</button></div>
-  </div>`;
- },
- 'buyer.mybids'(){
-  const mine=db.bids.filter(b=>b.buyerId===db.session);
-  return `${pageHead('My bids','Track each bid. You can raise a pending bid by ₹20 per quintal.')}<div class="card">${mine.length?`<div class="tablewrap"><table><thead><tr><th>Produce</th><th class="num">My bid / qtl</th><th class="num">Quantity</th><th>Delivery</th><th>Status</th><th></th></tr></thead><tbody>
-  ${mine.map(b=>{const L=listingOf(b.listing);return `<tr><td>${L?`<div class="crop">${cropTile(L.crop,30)}${esc(L.crop)}</div>`:'—'}</td><td class="num">${fmt(b.price)}</td><td class="num">${num(b.qty)} kg</td><td>${esc(b.deliver)}</td><td>${statusTag(b.status)}</td><td class="act">${b.status==='pending'?`<button class="btn o sm" data-act="raise" data-id="${b.id}">Raise +₹20</button>`:''}</td></tr>`}).join('')}
-  </tbody></table></div>`:emptyState('No bids placed yet','Explore produce to find a listing and place your first bid.','<button class="btn p" data-act="nav" data-v="explore">Explore produce</button>','tag')}</div>`;
- },
- 'buyer.saved'(){
-  const L=db.listings.filter(l=>db.saved.includes(l.id));
-  return `${pageHead('Saved listings','Listings you bookmarked to compare later.')}${L.length?`<div class="grid3">${L.map(card).join('')}</div>`:`<div class="card">${emptyState('Nothing saved yet','Tap the heart on a listing in Explore produce to save it here.','<button class="btn p" data-act="nav" data-v="explore">Explore produce</button>','heart')}</div>`}`;
- },
- 'buyer.purchases'(){
-  const mine=db.bids.filter(b=>b.buyerId===db.session&&b.status==='accepted');
-  return `${pageHead('Purchase history','Bids that were accepted.')}<div class="card">${mine.length?salesTable(mine,true):emptyState('No purchases yet','Accepted bids will show here.','','receipt')}</div>`;
- },
- 'admin.overview'(){
-  const farmers=db.users.filter(u=>u.role==='farmer').length,buyers=db.users.filter(u=>u.role==='buyer').length;
-  const tx=db.bids.filter(b=>b.status==='accepted').length;
-  return `${pageHead('Overview','Marketplace health at a glance. Sample data.')}
-  ${statCards([['Registered farmers',farmers],['Registered buyers',buyers],['Active listings',db.listings.filter(l=>l.status==='active').length],['Completed transactions',tx]])}
-  <div class="card"><h2>Recent activity</h2><div class="feed">${db.log.slice(0,10).map(x=>`<div>${esc(x)}</div>`).join('')}</div></div>`;
- },
- 'admin.users'(){
-  const rows=db.users.filter(u=>u.role!=='admin');
-  return `${pageHead('Users','Verify buyers before they can place bids on live listings.')}<div class="card"><div class="tablewrap"><table><thead><tr><th>Name</th><th>Role</th><th>Location</th><th>Verification</th><th></th></tr></thead><tbody>
-  ${rows.map(u=>`<tr><td><b>${esc(u.name)}</b><div class="mut">${esc(u.email)}</div></td><td style="text-transform:capitalize">${u.role}</td><td>${esc(u.loc||'—')}</td><td>${u.role==='buyer'?(u.verified?'<span class="tag ok">Verified</span>':'<span class="tag warn">Pending review</span>'):'<span class="tag">Farmer</span>'}</td><td class="act">${u.role!=='buyer'?'':u.verified?`<button class="btn o sm" data-act="ask" data-title="Revoke verification?" data-text="${esc(u.name)} will not be able to place bids until verified again." data-label="Revoke" data-then="verify" data-id="${u.id}" data-danger="1">Revoke</button>`:`<button class="btn p sm" data-act="verify" data-id="${u.id}">Verify buyer</button>`}</td></tr>`).join('')}
-  </tbody></table></div></div>`;
- },
- 'admin.moderation'(){
-  return `${pageHead('Listing moderation','Review listings and hide any that break marketplace policy.')}<div class="card">${listingTable(db.listings,true,true)}</div>`;
- },
- 'admin.activity'(){
-  return `${pageHead('Activity','Every marketplace event recorded in this session.')}<div class="card"><div class="feed">${db.log.map(x=>`<div>${esc(x)}</div>`).join('')}</div></div>`;
- }
-};
-
-/* ---------- Charts ---------- */
-function mountCharts(){
- Object.values(CH).forEach(c=>c&&c.destroy());CH={};
- if(typeof Chart==='undefined')return;
- const C={brand:'#1F4A3A',brand2:'#2E6B53',accent:'#C9962E',grid:'#EEEDE7',mut:'#5C6861',light:'#A9C4B5',bad:'#D9776B'};
- Chart.defaults.font.family='Inter, system-ui, sans-serif';
- Chart.defaults.color=C.mut;
- const money=v=>'₹'+Number(v).toLocaleString('en-IN');
- const legend={position:'bottom',labels:{boxWidth:8,boxHeight:8,usePointStyle:true}};
- const trend=document.getElementById('cTrend');
- if(trend){
-  const n=PR.range,hist=[...HP.slice(-n),...Array(3).fill(null)];
-  const pred=[...Array(n-1).fill(null),HP[HP.length-1],...PP];
-  CH.t=new Chart(trend,{type:'line',data:{labels:[...HM.slice(-n),...PM],datasets:[
-   {label:'Historical mandi price',data:hist,borderColor:C.brand,backgroundColor:'rgba(31,74,58,.08)',fill:true,tension:.3,pointRadius:2,borderWidth:2},
-   {label:'Forecast (sample)',data:pred,borderColor:C.accent,borderDash:[6,5],tension:.3,pointRadius:2,borderWidth:2}]},
-   options:{responsive:true,maintainAspectRatio:false,animation:{duration:500},plugins:{legend},scales:{y:{ticks:{callback:money},grid:{color:C.grid}},x:{grid:{display:false}}}}});
- }
- const dem=document.getElementById('cDemand');
- if(dem)CH.d=new Chart(dem,{type:'bar',data:{labels:DEMAND.map(d=>d[0]),datasets:[{label:'Demand index (sample)',data:DEMAND.map(d=>d[1]),backgroundColor:DEMAND.map((d,i)=>i<2?C.brand:C.light),borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,animation:{duration:500},plugins:{legend:{display:false}},scales:{y:{grid:{color:C.grid}},x:{grid:{display:false}}}}});
- const bid=document.getElementById('cBid');
- const L=currentBidListing();
- if(bid&&L){
-  const b=bidsOn(L.id);
-  CH.b=new Chart(bid,{type:'bar',data:{labels:b.map(x=>x.buyer),datasets:[{label:'Bid vs asking price (₹/qtl)',data:b.map(x=>x.price-L.ask),backgroundColor:b.map(x=>x.price>=L.ask?C.brand2:C.bad),borderRadius:6}]},
-   options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,animation:{duration:500},plugins:{legend:{display:false}},scales:{x:{ticks:{callback:v=>(v>0?'+':'')+money(v)},grid:{color:C.grid}},y:{grid:{display:false}}}}});
- }
+ </div>`;
+}
+function updateChrome(){
+ const u=me();
+ const hour=new Date().getHours();
+ $('#greet').textContent=`${hour<12?'Good morning':hour<17?'Good afternoon':'Good evening'}, ${u.name.split(' ')[0]}`;
+ const ph={farmer:'Search buyers, produce, farms…',buyer:'Search produce, farmers, orders…',admin:'Search users, listings, deals…'};
+ $('#gs').placeholder=ph[u.role];
+ $('#gs').value=SEARCH;
+ const choice=document.documentElement.dataset.themeChoice||getTheme();
+ document.querySelectorAll('[data-act="theme"]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.t===choice)));
+ $('#userbtn').innerHTML=`${avatar(u,'sm')}<span class="nm" style="font-size:14px;font-weight:600">${esc(u.name.split(' ')[0])}</span>${icon('chevron')}`;
+ const demo={farmer:['buyer@demo.in','Switch to buyer demo'],buyer:['ramesh@demo.in','Switch to farmer demo']}[u.role];
+ $('#usermenu').innerHTML=`<div class="head"><b>${esc(u.name)}</b><div class="mut small">${u.role[0].toUpperCase()+u.role.slice(1)} · ${esc(u.email)}</div></div>
+  <button class="item" data-act="nav" data-v="profile">${icon('user')}Profile</button>
+  <button class="item" data-act="nav" data-v="settings">${icon('settings')}Settings</button>
+  ${demo?`<button class="item" data-act="switch" data-e="${demo[0]}">${icon('refresh')}${demo[1]}</button>`:''}
+  <button class="item" data-act="logout" style="color:var(--bad)">${icon('logout')}Log out</button>`;
+ const notes=db.log.slice(0,6);
+ $('#notif-list').innerHTML=notes.map(n=>`<div class="note-item">${esc(n)}</div>`).join('')||'<div class="note-item mut">No notifications.</div>';
+ $('#dot').style.display=db.notesSeen===db.log[0]?'none':'block';
+}
+function renderNav(){
+ const u=me(),items=NAV[u.role];
+ $('#nav').innerHTML=items.map(([id,l,ic])=>`<button class="nav" data-act="nav" data-v="${id}" aria-current="${db.nav===id?'page':'false'}" class="">${icon(ic)}<span>${l}</span></button>`).join('');
+ $('#nav').querySelectorAll('.nav').forEach((b,i)=>{b.classList.toggle('on',items[i][0]===db.nav)});
 }
 
 /* ---------- Render ---------- */
+/* The Nearby Buyers panel sits beside the dashboard and price pages. Table-heavy pages use the full width. */
+const FARMER_ASIDE=['overview','prices','quality'];
 function render(){
  if(!db.session||!me()){renderAuth();return}
  if(!$('.app'))renderShell();
- const u=me(),items=NAV[u.role];
- if(!items.some(i=>i[0]===db.nav))db.nav='overview';
- document.querySelectorAll('.nav').forEach(b=>{const on=b.dataset.v===db.nav;b.classList.toggle('on',on);b.setAttribute('aria-current',on?'page':'false')});
+ const u=me(),extra=EXTRA_VIEWS[u.role]||[];
+ if(!NAV[u.role].some(i=>i[0]===db.nav)&&!extra.includes(db.nav))db.nav='overview';
+ renderNav();
+ CHARTS=[];
  const key=u.role+'.'+db.nav;
- $('#view').innerHTML=(VIEWS[key]||VIEWS[u.role+'.overview'])();
+ let html=(VIEWS[key]||VIEWS[u.role+'.overview'])();
+ let aside=(u.role==='farmer'&&FARMER_ASIDE.includes(db.nav))?nearbyPanel():'';
+ /* On narrow screens the Nearby Buyers panel moves up, directly below the statistics. */
+ const narrow=window.matchMedia&&matchMedia('(max-width:1180px)').matches;
+ if(aside&&narrow&&html.includes('<!--ASIDE-->')){html=html.replace('<!--ASIDE-->',`<div class="aside-inline">${aside}</div>`);aside=''}
+ html=html.replace('<!--ASIDE-->','');
+ $('#view').innerHTML=html;
+ $('#aside').innerHTML=aside;
+ $('#content').classList.toggle('has-aside',!!aside);
+ updateChrome();
+ setPop(POP);
  mountCharts();
+}
+function setPop(p){
+ POP=p;
+ document.querySelectorAll('[data-pop]').forEach(x=>x.hidden=x.dataset.pop!==p);
+ document.querySelectorAll('[data-act="pop"]').forEach(b=>b.setAttribute('aria-expanded',String(b.dataset.p===p)));
+}
+
+/* ---------- Public: landing page ---------- */
+function publicNav(active){
+ return `<header class="public-nav"><div class="in">
+  <a class="brand" href="${BASE}index.html" style="padding:0"><span class="mark">${icon('leaf')}</span><span>AgriVision <span class="ai">AI</span></span></a>
+  <nav class="links" aria-label="Page sections"><a class="hide-s" href="#about">About</a><a class="hide-s" href="#how">How it works</a><a class="hide-s" href="#roles">Who it's for</a><a href="#contact">Contact</a></nav>
+  <div class="seg" role="group" aria-label="Theme">
+   <button data-act="theme" data-t="light" aria-pressed="false">${icon('sun')}<span class="hide-s">Light</span></button>
+   <button data-act="theme" data-t="dark" aria-pressed="false">${icon('moon')}<span class="hide-s">Dark</span></button>
+   <button data-act="theme" data-t="system" aria-pressed="false">${icon('monitor')}<span class="hide-s">System</span></button>
+  </div>
+  <a class="btn o sm" href="${BASE}login.html">Log in</a>
+  <a class="btn p sm" href="${BASE}register.html">Get started</a>
+ </div></header>`;
+}
+function renderLanding(){
+ $('#app').innerHTML=`${publicNav()}
+ <main>
+  <section class="wrap hero">
+   <div>
+    <p class="eyebrow">Farm-to-market trade for Karnataka</p>
+    <h1>Sell your produce at a fair price, backed by a quality check.</h1>
+    <p class="lead">AgriVision AI connects farmers directly with retailers, wholesalers and food processors. Photo-based quality grading, mandi price context and transparent bids in one place.</p>
+    <div class="row" style="justify-content:flex-start;margin-top:26px;gap:12px">
+     <a class="btn p lg" href="${BASE}register.html">Create a farmer or buyer account${icon('arrow-right')}</a>
+     <a class="btn o lg" href="#how">How it works</a>
+    </div>
+    <p class="hint" style="margin-top:14px">Prototype with demonstration data. Prices, distances and quality scores are simulated.</p>
+   </div>
+   <div class="card" style="padding:22px;box-shadow:0 18px 40px rgba(41,49,41,.08)">
+    <div class="row"><b>Sample quality report</b><span class="chip outline">Demonstration</span></div>
+    <div class="kvs" style="margin:16px 0;grid-template-columns:1fr 1fr">
+     <div><div class="mut small">Crop</div><b>Tomato</b></div>
+     <div><div class="mut small">Grade</div><span class="bigval ok" style="font-size:22px">A</span></div>
+     <div><div class="mut small">Colour uniformity</div><b>88 / 100</b></div>
+     <div><div class="mut small">Visible defects</div><b>Low</b></div>
+    </div>
+    <div class="bar" style="margin-bottom:16px"><i style="width:88%"></i></div>
+    <div class="note info small">This is a model prediction for demonstration. It is not an official agricultural certification.</div>
+    <div class="row" style="margin-top:16px"><span class="mut small">Suggested price</span><b style="color:var(--brand)">₹30.0/kg</b></div>
+   </div>
+  </section>
+
+  <section class="section" id="about"><div class="wrap">
+   <p class="eyebrow">About AgriVision AI</p>
+   <h2 class="big">Trust, transparency and fair prices for every crop</h2>
+   <p class="sub" style="max-width:720px">Farmers often sell without knowing what their produce is worth, and buyers struggle to verify quality before they commit. AgriVision AI gives both sides the same information: a quality summary for each lot, recent market prices, and a bidding process where every offer and counter-offer is recorded.</p>
+   <div class="grid4" style="margin-top:26px">
+    <div class="card">${icon('scan')}<h3 style="margin-top:12px">Quality from a photo</h3><p class="mut">A quick grade for each lot, with the visual checks it is based on.</p></div>
+    <div class="card">${icon('chart')}<h3 style="margin-top:12px">Market context</h3><p class="mut">Mandi price history and a suggested price for the crop and district.</p></div>
+    <div class="card">${icon('handshake')}<h3 style="margin-top:12px">Transparent bids</h3><p class="mut">Accept, reject or counter. Every step is shown to both parties.</p></div>
+    <div class="card">${icon('shield')}<h3 style="margin-top:12px">Verified participants</h3><p class="mut">Buyers are checked before they can bid. Location is shown only at district level.</p></div>
+   </div>
+  </div></section>
+
+  <section class="section" id="how"><div class="wrap">
+   <p class="eyebrow">How it works</p>
+   <h2 class="big">From harvest to delivery in four steps</h2>
+   <div class="steps4">
+    <div class="card"><div class="stepno">1</div><h3>Upload a photo</h3><p class="mut">Add the crop, quantity, harvest date and farm location.</p></div>
+    <div class="card"><div class="stepno">2</div><h3>Get a quality grade</h3><p class="mut">Review the grade, confidence and visual checks. Save the assessment.</p></div>
+    <div class="card"><div class="stepno">3</div><h3>Receive bids</h3><p class="mut">Verified buyers nearby send bids or offers. Accept, reject or counter.</p></div>
+    <div class="card"><div class="stepno">4</div><h3>Deliver and get paid</h3><p class="mut">Track dispatch and delivery, and record payment in one place.</p></div>
+   </div>
+  </div></section>
+
+  <section class="section" id="roles"><div class="wrap">
+   <p class="eyebrow">Who it's for</p>
+   <h2 class="big">One platform, three workspaces</h2>
+   <div class="grid3" style="margin-top:24px">
+    <div class="card"><span class="chip ok">Farmers</span><h3 style="margin-top:12px">List produce and find buyers</h3><p class="mut">Assess quality, see price guidance, browse nearby buyers and manage bids and orders.</p></div>
+    <div class="card"><span class="chip info">Buyers</span><h3 style="margin-top:12px">Discover verified produce</h3><p class="mut">Filter by district, grade and price. Place bids, track orders and keep a transaction history.</p></div>
+    <div class="card"><span class="chip acc">Platform team</span><h3 style="margin-top:12px">Oversee the marketplace</h3><p class="mut">Verify users, monitor listings and AI performance, and review activity. Accounts are provisioned by staff.</p></div>
+   </div>
+  </div></section>
+
+  <section class="section" id="contact"><div class="wrap" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:40px;align-items:start">
+   <div><p class="eyebrow">Contact</p><h2 class="big">Questions about the platform?</h2><p class="sub">Send a message to the AgriVision team. This prototype stores messages in your browser so the admin view can show them.</p>
+    <p class="mut small" style="margin-top:16px">Email: hello@agrivision.example · Phone: 080-0000-0000 (demo)</p></div>
+   <form class="card stack" data-form="contact" novalidate>
+    <div class="form"><div class="field"><label for="cn">Name</label><input id="cn" name="name" required autocomplete="name"></div><div class="field"><label for="ce">Email</label><input id="ce" name="email" type="email" required autocomplete="email"></div></div>
+    <div class="field"><label for="cm">Message</label><textarea id="cm" name="message" required placeholder="How can we help?"></textarea></div>
+    <div class="row end"><button class="btn p" type="submit">${icon('send')}Send message</button></div>
+   </form>
+  </div></section>
+ </main>
+ <footer class="wrap foot-public row"><span>© 2026 AgriVision AI · Build Beyond '26 prototype</span><span class="row" style="gap:14px"><a href="${BASE}login.html">Log in</a><a href="${BASE}register.html">Register</a></span></footer>`;
+}
+
+/* ---------- Auth pages ---------- */
+function authSide(title,lead){
+ return `<aside class="auth-side">
+  <a class="brand" href="${BASE}index.html" style="padding:0"><span class="mark">${icon('leaf')}</span><span>AgriVision <span class="ai">AI</span></span></a>
+  <div><h2>${title}</h2><p class="sub">${lead}</p>
+   <ul><li>${icon('scan')}<span>Quality grades from a single photo, with the checks behind them.</span></li><li>${icon('chart')}<span>Mandi price history and a suggested price.</span></li><li>${icon('shield')}<span>Verified buyers, and transparent bids and orders.</span></li></ul></div>
+  <p class="mut small">Prototype · demonstration data</p>
+ </aside>`;
+}
+function renderAuth(mode='login'){
+ const reg=mode==='register';
+ $('#app').innerHTML=`<div class="auth-shell">
+  ${authSide(reg?'Join the marketplace':'Welcome back',reg?'Create a farmer or buyer account. Administrator accounts are set up by the platform team.':'Sign in to your workspace.')}
+  <main class="auth-form"><div class="authbox">
+   <a class="brand" href="${BASE}index.html" style="display:none"></a>
+   <h1>${reg?'Create your account':'Sign in'}</h1>
+   <p class="sub">${reg?'Choose a role. The fields change to match it.':'Use your registered email and password.'}</p>
+   <div class="tabs-block" role="tablist"><button role="tab" aria-selected="${!reg}" data-act="authmode" data-m="login">Sign in</button><button role="tab" aria-selected="${reg}" data-act="authmode" data-m="register">Register</button></div>
+   ${reg?registerForm():loginForm()}
+  </div></main>
+ </div>`;
+}
+function loginForm(){
+ return `<form data-form="login" class="stack" style="gap:0">
+  <div class="field"><label for="em">Email</label><input id="em" name="email" type="email" required autocomplete="username" placeholder="you@example.com"></div>
+  <div class="field" style="margin-top:14px"><label for="pw">Password</label><div class="pw"><input id="pw" name="pass" type="password" required autocomplete="current-password" placeholder="Your password"><button type="button" data-act="togglepw" aria-label="Show password">Show</button></div></div>
+  <div class="row" style="margin:12px 0 4px"><span></span><a class="small" href="${BASE}forgot.html">Forgot password?</a></div>
+  <button class="btn p w lg" type="submit" style="margin-top:10px">Sign in</button>
+ </form>
+ <div class="divider">Demonstration accounts</div>
+ <div class="demos">
+  <button class="demo" type="button" data-act="demo" data-e="ramesh@demo.in" data-p="farmer123"><span><b>Farmer</b> · Ramesh Kumar, Kolar</span><span class="chip ok">Farmer</span></button>
+  <button class="demo" type="button" data-act="demo" data-e="buyer@demo.in" data-p="buyer123"><span><b>Buyer</b> · FreshMart Wholesale</span><span class="chip info">Buyer</span></button>
+  <button class="demo" type="button" data-act="demo" data-e="admin@demo.in" data-p="admin123"><span><b>Administrator</b> · restricted access</span><span class="chip acc">Admin</span></button>
+ </div>
+ <p class="hint" style="margin-top:12px">Demonstration accounts only. Filling in a demo account does not sign you in until you press Sign in.</p>`;
+}
+function registerForm(){
+ const farmer=REG_ROLE==='farmer';
+ const dl=`<datalist id="kadist">${KA_DISTRICTS.map(d=>`<option value="${d}">`).join('')}</datalist>`;
+ return `<form data-form="register" class="stack" style="gap:14px">
+  <div class="roles" role="radiogroup" aria-label="Account type">
+   <label class="role"><input type="radio" name="role" value="farmer" ${farmer?'checked':''} data-act="regrole" data-r="farmer"><span><b>Farmer</b><br>I grow and sell produce</span></label>
+   <label class="role"><input type="radio" name="role" value="buyer" ${!farmer?'checked':''} data-act="regrole" data-r="buyer"><span><b>Buyer</b><br>Retailer, wholesaler or processor</span></label>
+  </div>
+  <div class="form">
+   ${farmer?`
+    <div class="field span2"><label for="r1">Full name</label><input id="r1" name="name" required autocomplete="name"></div>
+    <div class="field"><label for="r2">Mobile number</label><input id="r2" name="phone" required inputmode="numeric" maxlength="10" pattern="[6-9][0-9]{9}" placeholder="10 digits"></div>
+    <div class="field"><label for="r3">Email</label><input id="r3" name="email" type="email" required autocomplete="email"></div>
+    <div class="field"><label for="r4">Farm name</label><input id="r4" name="farm" required></div>
+    <div class="field"><label for="r5">Village</label><input id="r5" name="village" required></div>
+    <div class="field"><label for="r6">State</label><select id="r6" name="state" data-act="" >${STATES.map(s=>`<option ${s==='Karnataka'?'selected':''}>${s}</option>`).join('')}</select></div>
+    <div class="field"><label for="r7">District</label><input id="r7" name="district" list="kadist" required placeholder="Start typing"></div>
+    <div class="field span2"><label for="r8">Farm location</label><input id="r8" name="location" required placeholder="Nearest landmark or road (not shared publicly)"><p class="hint">Only the district is shown to buyers. Your exact location is never published.</p></div>
+    <div class="field span2"><label for="r9">Password</label><input id="r9" name="pass" type="password" required minlength="6" autocomplete="new-password" placeholder="At least 6 characters"></div>
+   `:`
+    <div class="field span2"><label for="r1">Company name</label><input id="r1" name="company" required></div>
+    <div class="field"><label for="r2">Contact person</label><input id="r2" name="contactPerson" required autocomplete="name"></div>
+    <div class="field"><label for="r3">Email</label><input id="r3" name="email" type="email" required autocomplete="email"></div>
+    <div class="field"><label for="r4">Mobile number</label><input id="r4" name="phone" required inputmode="numeric" maxlength="10" pattern="[6-9][0-9]{9}" placeholder="10 digits"></div>
+    <div class="field"><label for="r5">Business type</label><select id="r5" name="business">${['Retailer','Wholesaler','Food Processor'].map(s=>`<option>${s}</option>`).join('')}</select></div>
+    <div class="field span2"><label for="r6">Business address</label><input id="r6" name="address" required placeholder="Street, area (not shared publicly)"></div>
+    <div class="field"><label for="r7">State</label><select id="r7" name="state">${STATES.map(s=>`<option ${s==='Karnataka'?'selected':''}>${s}</option>`).join('')}</select></div>
+    <div class="field"><label for="r8">District</label><input id="r8" name="district" list="kadist" required placeholder="Start typing"></div>
+    <div class="field span2"><label for="r9">Password</label><input id="r9" name="pass" type="password" required minlength="6" autocomplete="new-password" placeholder="At least 6 characters"></div>
+   `}
+  </div>
+  ${dl}
+  <label class="check" style="font-weight:400"><input type="checkbox" name="terms" required> I agree to the terms and understand this is a prototype with demonstration data.</label>
+  <button class="btn p w lg" type="submit">Create account</button>
+  <p class="hint">Administrator accounts cannot be registered here. Platform staff provision them.</p>
+ </form>`;
+}
+function renderForgot(){
+ $('#app').innerHTML=`<div class="auth-shell">
+  ${authSide('Reset your password','We will send a reset link to your registered email.')}
+  <main class="auth-form"><div class="authbox">
+   <h1>Forgot password</h1>
+   <p class="sub">Enter the email you registered with.</p>
+   <form data-form="forgot" class="stack" style="margin-top:20px;gap:14px">
+    <div class="field"><label for="fe">Email</label><input id="fe" name="email" type="email" required autocomplete="username"></div>
+    <button class="btn p w lg" type="submit">Send reset link</button>
+   </form>
+   <p class="hint" style="margin-top:14px">Demonstration only: no email is sent. The confirmation message is shown on screen.</p>
+   <p style="margin-top:18px"><a href="${BASE}login.html">Back to sign in</a></p>
+  </div></main>
+ </div>`;
 }
