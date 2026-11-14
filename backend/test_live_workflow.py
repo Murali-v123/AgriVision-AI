@@ -10,7 +10,13 @@ try:
 except Exception:
     pass
 
+import os
 BASE_URL = 'http://127.0.0.1:8000/api'
+
+# Configurable test credentials (can be overridden in production/CI)
+FARMER_PASSWORD = os.environ.get('DEMO_FARMER_PASSWORD', 'farmer123')
+BUYER_PASSWORD = os.environ.get('DEMO_BUYER_PASSWORD', 'buyer123')
+ADMIN_PASSWORD = os.environ.get('DEMO_ADMIN_PASSWORD', 'admin123')
 
 def req(path, method='GET', data=None, token=None, is_json=True, raw_body=None, content_type=None):
     url = BASE_URL + path
@@ -49,16 +55,16 @@ def run_workflow():
     print("==================================================")
 
     # 1. Farmer Login
-    print("\n[Step 1] Farmer Login (ramesh@demo.in / farmer123)")
-    status, res = req('/auth/login/', method='POST', data={'email': 'ramesh@demo.in', 'password': 'farmer123'})
+    print("\n[Step 1] Farmer Login (ramesh@demo.in)")
+    status, res = req('/auth/login/', method='POST', data={'email': 'ramesh@demo.in', 'password': FARMER_PASSWORD})
     assert status == 200, f"Login failed: {res}"
     farmer_token = res['tokens']['access']
     print("  ✓ Login successful! Token acquired.")
     print(f"  Farmer: {res['user']['full_name']} ({res['user']['email']}), Role: {res['user']['role']}")
 
     # 2. Buyer Login
-    print("\n[Step 2] Buyer Login (buyer@demo.in / buyer123)")
-    status, res = req('/auth/login/', method='POST', data={'email': 'buyer@demo.in', 'password': 'buyer123'})
+    print("\n[Step 2] Buyer Login (buyer@demo.in)")
+    status, res = req('/auth/login/', method='POST', data={'email': 'buyer@demo.in', 'password': BUYER_PASSWORD})
     assert status == 200, f"Buyer login failed: {res}"
     buyer_token = res['tokens']['access']
     print("  ✓ Login successful! Token acquired.")
@@ -147,8 +153,8 @@ def run_workflow():
     print(f"  ✓ Delivered! Status: {res['order']['delivery_status']}")
 
     # 9. Admin Login & Analytics
-    print("\n[Step 9] Admin Login & Analytics (admin@demo.in / admin123)")
-    status, res = req('/auth/login/', method='POST', data={'email': 'admin@demo.in', 'password': 'admin123'})
+    print("\n[Step 9] Admin Login & Analytics (admin@demo.in)")
+    status, res = req('/auth/login/', method='POST', data={'email': 'admin@demo.in', 'password': ADMIN_PASSWORD})
     assert status == 200, f"Admin login failed: {res}"
     admin_token = res['tokens']['access']
 
