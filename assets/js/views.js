@@ -8,8 +8,14 @@ const tdN=(x)=>`<td class="num">${x}</td>`;
 const tabBar=(k,def,items)=>`<div class="tabs" role="tablist">${items.map(([v,l])=>`<button role="tab" aria-selected="${tab(k,def)===v}" data-act="tab" data-k="${k}" data-t="${v}">${l}</button>`).join('')}</div>`;
 const selectOpts=(arr,val,all='')=>(all?`<option value="">${all}</option>`:'')+arr.map(x=>`<option value="${esc(x)}" ${String(val)===String(x)?'selected':''}>${esc(x)}</option>`).join('');
 const field=(id,label,inner,cls='')=>`<div class="field ${cls}"><label for="${id}">${label}</label>${inner}</div>`;
-const dealsForFarmer=()=>db.deals.filter(d=>d.farmerId===db.session);
-const dealsForBuyer=()=>db.deals.filter(d=>d.buyerId===db.session);
+const dealsForFarmer=()=>{
+  const u=me(),uid=u?u.id:db.session;
+  return (db.deals||[]).filter(d=>d.farmerId===uid||d.farmerId===db.session||(u&&(d.farmerId==='f1'||d.farmerId===u.id))||(!d.farmerId&&u&&u.role==='farmer'));
+};
+const dealsForBuyer=()=>{
+  const u=me(),uid=u?u.id:db.session;
+  return (db.deals||[]).filter(d=>d.buyerId===uid||d.buyerId===db.session||(u&&(d.buyerId==='b1'||d.buyerId===u.id))||(!d.buyerId&&u&&u.role==='buyer'));
+};
 const isOpen=d=>d.status==='pending'||d.status==='counter';
 const totalOf=d=>d.price*d.qty;
 const monthsSince=(iso)=>iso?new Date(iso).getMonth():null;

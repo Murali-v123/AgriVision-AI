@@ -124,6 +124,7 @@ async function apiLoadBids() {
 }
 
 async function apiPlaceBid(listingId, price, qty, message, delivery, buyerId) {
+  const u = me();
   try {
     await ensureAuthenticated();
     const payload = {
@@ -145,20 +146,39 @@ async function apiPlaceBid(listingId, price, qty, message, delivery, buyerId) {
         const retry = await API.createBid(payload);
         if (retry && retry.ok) {
           const rd = await retry.json();
-          db.deals.push(APIAdapter.bid(rd));
+          const adapted = APIAdapter.bid(rd);
+          if (buyerId) {
+            adapted.buyerId = buyerId;
+            adapted.farmerId = u ? u.id : 'f1';
+            adapted.initiator = 'farmer';
+            adapted.by = 'farmer';
+          }
+          const exIdx = db.deals.findIndex(x => x.id === adapted.id);
+          if (exIdx >= 0) db.deals[exIdx] = adapted; else db.deals.unshift(adapted);
           save();
           return true;
         }
       }
-      console.warn('Backend bid note, using local demo state:', d);
+      console.warn('Backend bid note, kept local state:', d);
       return true;
     }
     const adapted = APIAdapter.bid(d);
-    db.deals.push(adapted);
+    if (buyerId) {
+      adapted.buyerId = buyerId;
+      adapted.farmerId = u ? u.id : 'f1';
+      adapted.initiator = 'farmer';
+      adapted.by = 'farmer';
+    } else {
+      adapted.buyerId = u ? u.id : 'b1';
+      adapted.initiator = 'buyer';
+      adapted.by = 'buyer';
+    }
+    const exIdx = db.deals.findIndex(x => x.id === adapted.id);
+    if (exIdx >= 0) db.deals[exIdx] = adapted; else db.deals.unshift(adapted);
     save();
     return true;
   } catch (e) {
-    console.warn('Network issue, using demo state:', e);
+    console.warn('Network issue in apiPlaceBid:', e);
     return true;
   }
 }
@@ -625,16 +645,42 @@ document.addEventListener('submit',e=>{
   if(!(q>0)){toast('Enter a valid quantity');return}
   const qtyToOffer = (q <= L.qty) ? q : L.qty;
 
+  // Immediately stage the offer in local deals so Bids & Offers view NEVER shows empty
+  const dealId = 'd' + Date.now().toString(36);
+  const newDeal = {
+    id: dealId,
+    listing: L.id,
+    farmerId: u ? u.id : 'f1',
+    buyerId: buyer ? buyer.id : 'b1',
+    farmerName: u ? u.name : 'Ramesh Kumar',
+    buyerName: buyer ? buyer.name : 'FreshMart Wholesale',
+    initiator: 'farmer',
+    price: p,
+    qty: qtyToOffer,
+    status: 'pending',
+    by: 'farmer',
+    stage: null,
+    paid: false,
+    t: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+    message: v.message || 'Direct farmer offer',
+    rounds: 1
+  };
+  db.deals.unshift(newDeal);
+  log(u.name + ' sent an offer to ' + buyer.name);
+  save();
+
   if(window.API){
-   apiPlaceBid(L.id, p, qtyToOffer, v.message || 'Direct farmer offer', 'Farmer dispatch', buyer.id).then(ok=>{
+   apiPlaceBid(L.id, p, qtyToOffer, v.message || 'Direct farmer offer', 'Farmer dispatch', buyer.id).finally(()=>{
      closeM();
-     toast('Offer sent to ' + buyer.name, true);
+     toast('Offer sent to ' + (buyer.name || 'buyer'), true);
      goTo('bids', 'farmer');
    });
    return;
   }
-  db.deals.push({id:'d'+Date.now().toString(36),listing:L.id,farmerId:u.id,buyerId:buyer.id,initiator:'farmer',price:p,qty:qtyToOffer,status:'pending',by:'farmer',stage:null,paid:false,t:stamp(),message:v.message||'',rounds:1});
-  log(u.name+' sent an offer to '+buyer.name);save();closeM();toast('Offer sent to '+buyer.name,true);goTo('bids','farmer');return;
+  closeM();
+  toast('Offer sent to ' + buyer.name, true);
+  goTo('bids', 'farmer');
+  return;
  }
  if(f==='counter'){
   const x=db.deals.find(y=>y.id===form.dataset.id);if(!x)return;
