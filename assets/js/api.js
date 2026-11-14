@@ -202,6 +202,7 @@ window.APIAdapter = {
     status: u.account_status,
     locShare: u.farmer_profile?.location_sharing_enabled ?? u.buyer_profile?.location_sharing_enabled ?? true,
     joined: u.created_at ? u.created_at.slice(0, 10) : '',
+    prefs: { notifyBids: true, notifyPrices: false },
   }),
 
   listing: (l) => ({

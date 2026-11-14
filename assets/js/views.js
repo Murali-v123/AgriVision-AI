@@ -327,13 +327,16 @@ FARMER.profile=()=>{const u=me();return `${pageHead('Profile','This is how buyer
  </div></div>`};
 
 function settingsBlock(u){
+ u = u || me() || {};
+ const prefs = (u && u.prefs) || { notifyBids: true, notifyPrices: false };
+ if (!u.prefs) u.prefs = prefs;
  return `<div class="grid2 even">
   <div class="card"><h2>Appearance</h2><p class="mut small" style="margin:-6px 0 10px">Choose light, dark or the system setting. Your choice is saved in this browser.</p>
    <div class="seg" role="group" aria-label="Theme" style="display:inline-flex">
     <button data-act="theme" data-t="light" aria-pressed="false">${icon('sun')}Light</button><button data-act="theme" data-t="dark" aria-pressed="false">${icon('moon')}Dark</button><button data-act="theme" data-t="system" aria-pressed="false">${icon('monitor')}System</button></div></div>
   <div class="card"><h2>Notifications</h2>
-   <div class="switch"><span>Bid and offer updates</span><input type="checkbox" data-set="notifyBids" ${u.prefs.notifyBids?'checked':''} aria-label="Bid and offer updates"></div>
-   <div class="switch"><span>Price alerts for my crops</span><input type="checkbox" data-set="notifyPrices" ${u.prefs.notifyPrices?'checked':''} aria-label="Price alerts"></div>
+   <div class="switch"><span>Bid and offer updates</span><input type="checkbox" data-set="notifyBids" ${prefs.notifyBids?'checked':''} aria-label="Bid and offer updates"></div>
+   <div class="switch"><span>Price alerts for my crops</span><input type="checkbox" data-set="notifyPrices" ${prefs.notifyPrices?'checked':''} aria-label="Price alerts"></div>
   </div>
  </div>
  <div class="grid2 even" style="margin-top:14px">

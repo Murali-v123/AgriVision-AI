@@ -732,7 +732,9 @@ document.addEventListener('change',e=>{
   render();return;
  }
  if(t.dataset.set){
-  const u=me();if(t.dataset.set==='locShare')u.locShare=t.checked;else u.prefs[t.dataset.set]=t.checked;
+  const u=me();if(!u)return;
+  if(!u.prefs)u.prefs={notifyBids:true,notifyPrices:false};
+  if(t.dataset.set==='locShare')u.locShare=t.checked;else u.prefs[t.dataset.set]=t.checked;
   save();render();toast('Setting saved',true);return;
  }
  if(t.dataset.plat){db.platform[t.dataset.plat]=t.checked;log('Platform rule changed: '+t.dataset.plat+' '+(t.checked?'on':'off'));save();render();toast('Platform rule updated',true);return}
