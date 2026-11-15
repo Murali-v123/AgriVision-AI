@@ -6,8 +6,12 @@
  * with automatic fallback to Django proxy (http://127.0.0.1:8000/api/market/ml-intelligence/).
  */
 
-const ML_API_BASE = 'http://127.0.0.1:5000';
-const DJANGO_ML_API_BASE = 'http://127.0.0.1:8000/api';
+const ML_API_BASE = window.ML_API_BASE_OVERRIDE || 'http://127.0.0.1:5000';
+const DJANGO_ML_API_BASE = window.API_BASE_OVERRIDE || (
+  (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http') && window.location.port !== '5500' && window.location.port !== '3000')
+    ? `${window.location.origin}/api`
+    : 'http://127.0.0.1:8000/api'
+);
 
 window.ML_CACHE = {
   isOnline: false,

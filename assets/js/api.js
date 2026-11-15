@@ -3,7 +3,11 @@
    This file must be loaded AFTER data.js and BEFORE ui.js. */
 
 /* ---------- Constants ---------- */
-const API_BASE = 'http://127.0.0.1:8000/api';
+const API_BASE = window.API_BASE_OVERRIDE || (
+  (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http') && window.location.port !== '5500' && window.location.port !== '3000')
+    ? `${window.location.origin}/api`
+    : 'http://127.0.0.1:8000/api'
+);
 const TOKEN_KEY = 'av-access-token';
 const REFRESH_KEY = 'av-refresh-token';
 const USER_KEY = 'av-user';

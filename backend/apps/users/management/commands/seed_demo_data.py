@@ -154,21 +154,24 @@ class Command(BaseCommand):
                 buyer_objs[tag] = u
 
             # 4. Quality Assessment
-            qa1, _ = QualityAssessment.objects.get_or_create(
+            qa1 = QualityAssessment.objects.filter(
                 farmer=farmer_objs['f1'],
-                crop='Tomato',
-                defaults={
-                    'predicted_grade': 'A',
-                    'confidence': 91,
-                    'assessment_details': {
+                crop='Tomato'
+            ).first()
+            if not qa1:
+                qa1 = QualityAssessment.objects.create(
+                    farmer=farmer_objs['f1'],
+                    crop='Tomato',
+                    predicted_grade='A',
+                    confidence=91,
+                    assessment_details={
                         'uniformity': 88,
                         'defects': 3,
                         'brightness': 62,
                         'ripeness': 'Ripe (stage 4 of 6)',
                     },
-                    'assessment_method': 'pixel_heuristic_demo',
-                }
-            )
+                    assessment_method='pixel_heuristic_demo',
+                )
 
             # 5. Listings
             listings_data = [
