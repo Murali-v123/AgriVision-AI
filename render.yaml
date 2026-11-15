@@ -56,10 +56,5 @@ services:
     plan: free
     region: oregon
     branch: integration
-    rootDir: .
     buildCommand: ""
-    publishDir: .
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
+    publishDir: "."
