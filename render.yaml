@@ -1,22 +1,62 @@
+# Render Blueprint specification for AgriVision AI
+# Automatically provisions Backend, ML Engine, and Static Frontend
+
 services:
+  # -------------------------------------------------------------
+  # 1. Django REST Backend API
+  # -------------------------------------------------------------
   - type: web
-    name: agrivision-ai
+    name: agrivision-backend
     runtime: python
-    region: oregon
     plan: free
-    buildCommand: bash build.sh
-    startCommand: bash start.sh
-    autoDeploy: true
+    region: oregon
+    branch: integration
+    rootDir: backend
+    buildCommand: "pip install -r requirements.txt && python manage.py migrate --noinput && python manage.py seed_demo_data && python manage.py collectstatic --noinput"
+    startCommand: "gunicorn agrivision.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
-      - key: SECRET_KEY
-        generateValue: true
       - key: DEBUG
         value: "False"
+      - key: SECRET_KEY
+        generateValue: true
       - key: ALLOWED_HOSTS
         value: "*"
       - key: CORS_ALLOW_ALL_ORIGINS
         value: "True"
       - key: CSRF_TRUSTED_ORIGINS
         value: "https://*.onrender.com"
+      - key: ML_API_URL
+        fromService:
+          type: web
+          name: agrivision-ml
+          property: host
+
+  # -------------------------------------------------------------
+  # 2. Flask ML Inference Microservice
+  # -------------------------------------------------------------
+  - type: web
+    name: agrivision-ml
+    runtime: python
+    plan: free
+    region: oregon
+    branch: integration
+    rootDir: agrivision-ml
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn src.api:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+
+  # -------------------------------------------------------------
+  # 3. Static Web Frontend
+  # -------------------------------------------------------------
+  - type: web
+    name: agrivision-ui
+    runtime: static
+    plan: free
+    region: oregon
+    branch: integration
+    buildCommand: ""
+    staticPublishPath: .

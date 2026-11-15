@@ -6,12 +6,19 @@
  * with automatic fallback to Django proxy (http://127.0.0.1:8000/api/market/ml-intelligence/).
  */
 
-const ML_API_BASE = window.ML_API_BASE_OVERRIDE || 'http://127.0.0.1:5000';
-const DJANGO_ML_API_BASE = window.API_BASE_OVERRIDE || (
-  (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http') && window.location.port !== '5500' && window.location.port !== '3000')
-    ? `${window.location.origin}/api`
-    : 'http://127.0.0.1:8000/api'
-);
+const IS_LOCAL_HOST = typeof window !== 'undefined' && window.location && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '');
+
+const ML_API_BASE = (typeof window !== 'undefined' && (window.AGRIVISION_ML_BASE || window.ML_API_BASE_OVERRIDE))
+  || (typeof localStorage !== 'undefined' && localStorage.getItem('agrivision_ml_base'))
+  || (IS_LOCAL_HOST ? 'http://127.0.0.1:5000' : 'https://agrivision-ml.onrender.com');
+
+const DJANGO_ML_API_BASE = (typeof window !== 'undefined' && (window.AGRIVISION_API_BASE || window.API_BASE_OVERRIDE))
+  || (typeof localStorage !== 'undefined' && localStorage.getItem('agrivision_api_base'))
+  || (IS_LOCAL_HOST
+      ? (window.location.port === '5500' || window.location.port === '3000' || window.location.protocol === 'file:' ? 'http://127.0.0.1:8000/api' : `${window.location.origin}/api`)
+      : (window.location && window.location.hostname.endsWith('onrender.com')
+          ? (window.location.hostname.includes('agrivision-ui') ? 'https://agrivision-backend.onrender.com/api' : `${window.location.origin}/api`)
+          : (window.location ? `${window.location.origin}/api` : 'http://127.0.0.1:8000/api')));
 
 window.ML_CACHE = {
   isOnline: false,

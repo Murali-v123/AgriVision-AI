@@ -3,11 +3,16 @@
    This file must be loaded AFTER data.js and BEFORE ui.js. */
 
 /* ---------- Constants ---------- */
-const API_BASE = window.API_BASE_OVERRIDE || (
-  (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http') && window.location.port !== '5500' && window.location.port !== '3000')
-    ? `${window.location.origin}/api`
-    : 'http://127.0.0.1:8000/api'
-);
+const IS_LOCAL_ENV = typeof window !== 'undefined' && window.location && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '');
+
+// Dynamic API Base: auto-detects localhost vs Render cloud production
+const API_BASE = (typeof window !== 'undefined' && (window.AGRIVISION_API_BASE || window.API_BASE_OVERRIDE))
+  || (typeof localStorage !== 'undefined' && localStorage.getItem('agrivision_api_base'))
+  || (IS_LOCAL_ENV
+      ? (window.location.port === '5500' || window.location.port === '3000' || window.location.protocol === 'file:' ? 'http://127.0.0.1:8000/api' : `${window.location.origin}/api`)
+      : (window.location && window.location.hostname.endsWith('onrender.com')
+          ? (window.location.hostname.includes('agrivision-ui') ? 'https://agrivision-backend.onrender.com/api' : `${window.location.origin}/api`)
+          : (window.location ? `${window.location.origin}/api` : 'http://127.0.0.1:8000/api')));
 const TOKEN_KEY = 'av-access-token';
 const REFRESH_KEY = 'av-refresh-token';
 const USER_KEY = 'av-user';
