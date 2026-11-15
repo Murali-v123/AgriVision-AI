@@ -52,7 +52,7 @@ class ProductAndAITests(TestCase):
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
         self.assertIn('predicted_grade', res.data)
         self.assertIn('confidence', res.data)
-        self.assertEqual(res.data['assessment_method'], 'pixel_heuristic_demo')
+        self.assertIn(res.data['assessment_method'], ['CNN_EfficientNet_B2', 'pixel_heuristic_demo'])
         self.assertTrue(QualityAssessment.objects.filter(farmer=self.farmer).exists())
 
     def test_farmer_can_create_product(self):

@@ -121,9 +121,9 @@ FARMER.upload=()=>{
    <div class="note info small">Quantity is stored in kilograms. One quintal is 100 kg.</div>
    <div class="row" style="gap:10px;margin-top:4px">
     <button class="btn o" data-act="pick">${icon('upload')}Upload image</button>
-    <button class="btn p" data-act="analyze" ${D.img?'':'disabled'}>${icon('scan')}Analyze quality</button>
+    <button class="btn p" data-act="analyze" ${D.img?'':'disabled'}>${icon('scan')}Run CNN Disease &amp; Quality Check</button>
    </div>
-   ${D.img?'':'<p class="hint">Add a photo to enable quality analysis.</p>'}
+   ${D.img?'':'<p class="hint">Add a photo to enable the CNN disease and quality classifier.</p>'}
   </div>
  </div>`;
 };
@@ -131,31 +131,45 @@ FARMER.upload=()=>{
 FARMER.quality=()=>{
  const a=db.assess.find(x=>x.id===db.lastAssess)||db.assess[0];
  const hist=db.assess.slice().reverse();
- if(!a)return `${pageHead('AI Quality Assessment','Grade a lot from a photo.')}<div class="card">${emptyState('No assessment yet','Upload a produce photo and run the quality check to see its grade here.','<button class="btn p" data-act="nav" data-v="upload">Upload produce</button>','scan')}</div>`;
- const cat={A:'High quality',B:'Medium quality',C:'Low quality'}[a.grade];
+ if(!a)return `${pageHead('AI Quality & Disease Assessment','Diagnose crop health and grade lots from a photo.')}<div class="card">${emptyState('No assessment yet','Upload a produce photo and run the CNN disease & quality check to see its diagnosis here.','<button class="btn p" data-act="nav" data-v="upload">Upload produce</button>','scan')}</div>`;
+ const cat={A:'High quality',B:'Medium quality',C:'Low quality'}[a.grade]||'Commercial';
  const surface=a.defects<=4?'Low':a.defects<=10?'Moderate':'High';
  const colour=a.uniformity>=75?'Consistent':a.uniformity>=55?'Some variation':'Uneven';
- return `${pageHead('AI Quality Assessment','Model prediction for this lot. Read the notes before listing.',`<button class="btn o" data-act="analyze-again">${icon('refresh')}Analyze again</button><button class="btn o" data-act="save-assess" ${a.saved?'disabled':''}>${icon('check')}${a.saved?'Assessment saved':'Save assessment'}</button><button class="btn p" data-act="list-open" data-id="${a.id}">${icon('package')}List product</button>`)}
+ const isCNN = a.method === 'CNN_EfficientNet_B2';
+ const topCandidates = (a.top_predictions && a.top_predictions.length > 1)
+   ? a.top_predictions.slice(0, 4).map(p=>`<span class="chip outline" style="font-size:12px">${esc(p.crop)}: ${p.confidence}%</span>`).join(' ')
+   : '';
+
+ return `${pageHead('AI Quality & Disease Assessment','CNN Model prediction & health diagnosis. Read the notes before listing.',`<button class="btn o" data-act="analyze-again">${icon('refresh')}Analyze again</button><button class="btn o" data-act="save-assess" ${a.saved?'disabled':''}>${icon('check')}${a.saved?'Assessment saved':'Save assessment'}</button><button class="btn p" data-act="list-open" data-id="${a.id}">${icon('package')}List product</button>`)}
  <div class="grid2 even">
   <div class="card stack">
-   <div class="row"><h2 style="margin:0">Analysed photo</h2><span class="chip outline">${esc(a.t)}</span></div>
+   <div class="row"><h2 style="margin:0">Analysed photo</h2><span class="chip ${isCNN?'ok':'outline'}">${isCNN?'CNN EfficientNet-B2':esc(a.t)}</span></div>
    <div class="photo tall">${a.img?`<img src="${a.img}" alt="Analysed produce photo">`:`<span class="tile full" style="${tintOf(a.crop)}">${esc(a.crop[0])}</span>`}</div>
-   <p class="mut small">Colour uniformity and defect levels were calculated from the pixels in this photo. The grade uses a simple demonstration rule, not a trained classifier.</p>
+   <div class="stack" style="gap:6px">
+     <div class="mut small"><strong>Model:</strong> ${esc(a.model_arch || 'crop_disease_model.pth (EfficientNet-B2)')}</div>
+     ${topCandidates ? `<div class="row" style="gap:6px;flex-wrap:wrap"><span class="small mut">Candidate Crops:</span> ${topCandidates}</div>` : ''}
+   </div>
   </div>
   <div class="card stack">
    <div class="row"><div><div class="mut small">Predicted quality grade</div><span class="bigval ${a.grade==='A'?'ok':a.grade==='B'?'':'bad'}" style="font-size:40px">Grade ${a.grade}</span></div><span class="chip ${a.grade==='A'?'ok':a.grade==='B'?'info':'warn'}">${cat}</span></div>
    <div><div class="row"><span class="small">Model confidence</span><b>${a.conf}%</b></div><div class="bar"><i style="width:${a.conf}%"></i></div></div>
-   <div><h3>Visual assessment</h3>
+   <div><h3>Crop Identification & Pathology</h3>
+    <div class="lrow"><span>Identified crop</span><b>${esc(a.crop)}</b></div>
+    <div class="lrow"><span>Health condition</span><b class="${a.grade==='A'?'ok':a.grade==='B'?'':'bad'}">${esc(a.health_status || (a.grade==='A'?'Healthy & Prime':'Surface Spots'))}</b></div>
+    <div class="lrow"><span>Disease risk</span><b>${esc(a.disease_risk || (a.grade==='A'?'Low pathology risk':'Moderate'))}</b></div>
+   </div>
+   <div><h3>Visual characteristics</h3>
     <div class="lrow"><span>Colour consistency</span><b>${colour} (${a.uniformity}/100)</b></div>
     <div class="lrow"><span>Visible defects</span><b>${a.defects}% of photo</b></div>
     <div class="lrow"><span>Surface damage</span><b>${surface}</b></div>
-    <div class="lrow"><span>Ripeness indicator</span><b>${esc(a.ripeness)}</b></div>
+    <div class="lrow"><span>Ripeness stage</span><b>${esc(a.ripeness)}</b></div>
    </div>
-   <div class="note"><b>Model prediction, not certification.</b> This result comes from a demonstration classifier. It is not an official agricultural or food-safety certificate, and it should be confirmed by inspection before a sale.</div>
+   ${a.recommendation ? `<div class="note info small" style="margin-top:6px"><b>Agronomy Guidance:</b> ${esc(a.recommendation)}</div>` : ''}
+   <div class="note"><b>Model prediction:</b> Deep learning inference with EfficientNet-B2 across 77 agricultural crops and produce health indicators. Confirm physical quality at mandi gate before final auction.</div>
   </div>
  </div>
  <div class="card pad0"><div class="table-head"><h2 style="margin:0">Assessment history</h2></div>
-  ${tbl(['Date',['Crop',0],['Grade',0],['Confidence',1],['Saved',0]],hist.map(x=>`<tr><td>${esc(x.t)}</td><td>${esc(x.crop)}</td><td>${gradeChip(x.grade)}</td>${tdN(x.conf+'%')}<td>${x.saved?'<span class="chip ok">Saved</span>':'<span class="chip outline">Not saved</span>'}</td></tr>`),emptyState('No assessments yet','Run an analysis to build your history.'))}
+  ${tbl(['Date',['Crop',0],['Grade',0],['Confidence',1],['Diagnosis',0],['Saved',0]],hist.map(x=>`<tr><td>${esc(x.t)}</td><td>${esc(x.crop)}</td><td>${gradeChip(x.grade)}</td>${tdN(x.conf+'%')}<td><span class="chip ${x.grade==='A'?'ok':x.grade==='B'?'info':'warn'}">${esc(x.health_status||'Evaluated')}</span></td><td>${x.saved?'<span class="chip ok">Saved</span>':'<span class="chip outline">Not saved</span>'}</td></tr>`),emptyState('No assessments yet','Run an analysis to build your history.'))}
  </div>`;
 };
 

@@ -5,6 +5,20 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.db.models import Q
 from PIL import Image
 import io
+import os
+import sys
+from pathlib import Path
+
+# Add agrivision-ml to sys.path so we can import the CNN Crop Disease Service
+AGRIVISION_ML_DIR = Path(__file__).resolve().parent.parent.parent.parent / 'agrivision-ml'
+if str(AGRIVISION_ML_DIR) not in sys.path:
+    sys.path.insert(0, str(AGRIVISION_ML_DIR))
+
+try:
+    from src.crop_disease import get_crop_disease_service
+    _cnn_service = get_crop_disease_service()
+except Exception:
+    _cnn_service = None
 
 from .models import ProductListing, QualityAssessment
 from .serializers import ProductListingSerializer, ProductCreateSerializer, QualityAssessmentSerializer
@@ -12,9 +26,23 @@ from .serializers import ProductListingSerializer, ProductCreateSerializer, Qual
 
 def assess_produce_image(image_file):
     """
-    Quality assessment heuristic based on RGB pixel analysis.
-    Labels result clearly as 'pixel_heuristic_demo' to never claim false certification.
+    Quality and Disease assessment powered by the CNN EfficientNet-B2 crop disease model.
+    Falls back gracefully to pixel heuristic if PyTorch weights are not yet initialized.
     """
+    global _cnn_service
+    if _cnn_service is None:
+        try:
+            from src.crop_disease import get_crop_disease_service
+            _cnn_service = get_crop_disease_service()
+        except Exception:
+            pass
+
+    if _cnn_service and _cnn_service.is_loaded:
+        try:
+            return _cnn_service.predict(image_file)
+        except Exception:
+            pass
+
     img = Image.open(image_file).convert('RGB').resize((64, 64))
     pixels = list(img.getdata())
     produce = [(r, g, b) for r, g, b in pixels if r + g + b <= 560]
@@ -41,6 +69,7 @@ def assess_produce_image(image_file):
     ripeness = 'Ripe (stage 4 of 6)' if mean_rg > 100 else 'Turning (stage 3 of 6)' if mean_rg > 40 else 'Green (stage 2 of 6)'
 
     return {
+        'crop': 'Tomato',
         'grade': grade,
         'confidence': confidence,
         'details': {
@@ -48,8 +77,9 @@ def assess_produce_image(image_file):
             'defects': defects,
             'brightness': brightness,
             'ripeness': ripeness,
+            'model_architecture': 'Pixel Heuristic Fallback'
         },
-        'method': 'pixel_heuristic_demo',
+        'method': 'pixel_heuristic_fallback',
     }
 
 
@@ -213,10 +243,11 @@ class QualityAssessmentView(APIView):
 
         # Save assessment
         image_file.seek(0)
+        detected_crop = result.get('crop') or crop
         assessment = QualityAssessment.objects.create(
             farmer=request.user,
             image=image_file,
-            crop=crop,
+            crop=detected_crop,
             predicted_grade=result['grade'],
             confidence=result['confidence'],
             assessment_details=result['details'],

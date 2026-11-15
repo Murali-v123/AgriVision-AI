@@ -10,14 +10,19 @@ Usage:
 """
 import os
 import sys
+from src.api import app, load_artifacts
 
-if __name__ == "__main__":
-    base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agrivision-ml")
-    os.chdir(base_dir)
+base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agrivision-ml")
+if base_dir not in sys.path:
     sys.path.insert(0, base_dir)
 
+
+
+if __name__ == "__main__":
+    os.chdir(base_dir)
+
     if "--serve" in sys.argv or "-s" in sys.argv:
-        from src.api import app, load_artifacts
+        
         load_artifacts()
         port = int(os.environ.get("PORT", 5000))
         print(f"Starting AgriVision AI ML API on port {port}...")

@@ -3,7 +3,10 @@
    This file must be loaded AFTER data.js and BEFORE ui.js. */
 
 /* ---------- Constants ---------- */
-const API_BASE = 'http://127.0.0.1:8000/api';
+const SERVER_ORIGIN = (typeof window !== 'undefined' && window.location && window.location.origin)
+  ? window.location.origin
+  : 'http://127.0.0.1:8000';
+const API_BASE = SERVER_ORIGIN + '/api';
 const TOKEN_KEY = 'av-access-token';
 const REFRESH_KEY = 'av-refresh-token';
 const USER_KEY = 'av-user';
@@ -109,8 +112,29 @@ window.API = {
   updateProduct: async (id, data) => apiFetch('/products/' + id + '/', { method: 'PATCH', body: JSON.stringify(data) }),
   deleteProduct: async (id) => apiFetch('/products/' + id + '/', { method: 'DELETE' }),
 
-  /* Quality Assessment */
+  /* Quality & Crop Disease Assessment (CNN EfficientNet-B2) */
   assessQuality: async (formData) => apiFetch('/ai/quality-assessment/', { method: 'POST', body: formData }),
+  predictCropDisease: async (data) => {
+    try {
+      const isFormData = data instanceof FormData;
+      const opts = isFormData
+        ? { method: 'POST', body: data }
+        : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) };
+      const res = await fetch(`${SERVER_ORIGIN}/predict-crop-disease`, opts);
+      if (res.ok) return await res.json();
+    } catch (e) {}
+    if (data instanceof FormData) {
+      return apiFetch('/ai/quality-assessment/', { method: 'POST', body: data });
+    }
+    return apiFetch('/ai/quality-assessment/', { method: 'POST', body: JSON.stringify(data) });
+  },
+  getCropDiseaseInfo: async () => {
+    try {
+      const res = await fetch(`${SERVER_ORIGIN}/crop-disease-info`);
+      if (res.ok) return await res.json();
+    } catch (e) {}
+    return null;
+  },
 
   /* Buyers */
   getBuyers: async (params = {}) => {
@@ -176,6 +200,9 @@ window.API = {
   /* Auth reference */
   Auth,
 };
+
+// Convenient lowercase alias
+window.api = window.API;
 
 /* ---------- Backend → Frontend data adapters ---------- */
 /* Maps backend JSON response shapes to what db / views.js expects. */

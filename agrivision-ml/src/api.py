@@ -12,21 +12,39 @@ import json
 import logging
 from datetime import datetime
 from typing import Dict, Any, Optional
+from flask import Flask, request, jsonify, send_from_directory, redirect
+
 
 # Ensure project root is in sys.path
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-from flask import Flask, request, jsonify, send_from_directory, redirect
-import pandas as pd
-import numpy as np
-import joblib
 
-from src.feature_engineering import AgriFeaturePipeline, create_time_features
-from src.price_prediction import PricePredictor
-from src.demand_forecasting import DemandForecaster, DEMAND_LIMITATION_NOTICE
-from src.explainability import AgriExplainer
+# Optional heavy deps — price/demand modules need matplotlib/shap which may not be installed
+try:
+    import pandas as pd
+    import numpy as np
+    import joblib
+    from src.feature_engineering import AgriFeaturePipeline, create_time_features
+    from src.price_prediction import PricePredictor
+    from src.demand_forecasting import DemandForecaster, DEMAND_LIMITATION_NOTICE
+    from src.explainability import AgriExplainer
+    _price_demand_available = True
+except Exception as _pd_err:
+    import warnings
+    warnings.warn(f"Price/demand modules unavailable: {_pd_err}. CNN crop-disease endpoints will still work.")
+    pd = None
+    np = None
+    joblib = None
+    AgriFeaturePipeline = create_time_features = None
+    PricePredictor = None
+    DemandForecaster = None
+    DEMAND_LIMITATION_NOTICE = "Price/demand modules not loaded."
+    AgriExplainer = None
+    _price_demand_available = False
+
+from src.crop_disease import get_crop_disease_service, CropDiseaseService
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -40,9 +58,9 @@ UI_DIR = os.path.dirname(BASE_DIR)
 app = Flask(__name__)
 
 # Global model state
-price_predictor: Optional[PricePredictor] = None
-demand_forecaster: Optional[DemandForecaster] = None
-explainer: Optional[AgriExplainer] = None
+price_predictor = None  # type: Optional[Any]
+demand_forecaster = None  # type: Optional[Any]
+explainer = None  # type: Optional[Any]
 model_metrics: Dict[str, Any] = {}
 recent_market_cache: Dict[str, Dict[str, Any]] = {}
 supported_markets_list = []
@@ -51,7 +69,11 @@ supported_markets_list = []
 def load_artifacts():
     """Loads trained models, preprocessors, and evaluation metrics at application boot."""
     global price_predictor, demand_forecaster, explainer, model_metrics, recent_market_cache, supported_markets_list
-    
+
+    if not _price_demand_available:
+        logger.warning("Price/demand modules not available — skipping artifact load. CNN endpoints still active.")
+        return
+
     price_model_path = os.path.join(MODELS_DIR, "price_model.joblib")
     preproc_path = os.path.join(MODELS_DIR, "price_preprocessor.joblib")
     demand_model_path = os.path.join(MODELS_DIR, "demand_model.joblib")
@@ -258,6 +280,7 @@ def serve_ui(filename):
 def health():
     """Health check endpoint providing system status and version information."""
     is_ready = (price_predictor is not None and demand_forecaster is not None)
+    crop_svc = get_crop_disease_service()
     return jsonify({
         "status": "healthy" if is_ready else "degraded",
         "service": "AgriVision AI - Machine Learning Engine",
@@ -266,7 +289,8 @@ def health():
         "models_loaded": {
             "price_prediction_model": price_predictor is not None,
             "demand_forecasting_model": demand_forecaster is not None,
-            "explainability_engine": explainer is not None
+            "explainability_engine": explainer is not None,
+            "crop_disease_model": crop_svc.is_loaded if crop_svc else False
         },
         "supported_crops": ["Tomato"],
         "supported_markets": supported_markets_list
@@ -486,6 +510,58 @@ def get_markets():
             {"market": "Mysuru", "district": "Mysuru"},
             {"market": "Chikkaballapur", "district": "Chikkaballapur"}
         ]
+    }), 200
+
+
+@app.route("/predict-crop-disease", methods=["POST"])
+@app.route("/ai/crop-disease", methods=["POST"])
+@app.route("/ai/quality-assessment/", methods=["POST"])
+@app.route("/ai/quality-assessment", methods=["POST"])
+def predict_crop_disease():
+    """
+    POST /predict-crop-disease
+    Receives produce/leaf imagery via:
+    1. multipart/form-data: 'image' or 'file'
+    2. JSON payload: 'image' (data URI or base64) or 'image_base64'
+    Returns CNN EfficientNet-B2 classification across 77 crops,
+    disease/health assessment, commercial quality grade (A/B/C), confidence %, and agronomy guidance.
+    """
+    image_input = None
+    if "image" in request.files:
+        image_input = request.files["image"]
+    elif "file" in request.files:
+        image_input = request.files["file"]
+    elif request.is_json:
+        payload = request.get_json(silent=True) or {}
+        image_input = payload.get("image") or payload.get("image_base64")
+    elif request.form.get("image"):
+        image_input = request.form.get("image")
+
+    if not image_input:
+        return jsonify({
+            "error": "No image provided. Please send multipart 'image' or JSON payload with 'image_base64'."
+        }), 400
+
+    try:
+        service = get_crop_disease_service()
+        result = service.predict(image_input)
+        return jsonify(result), 200
+    except Exception as exc:
+        logger.error("Error during crop disease prediction: %s", exc, exc_info=True)
+        return jsonify({"error": f"Crop disease analysis failed: {str(exc)}"}), 500
+
+
+@app.route("/crop-disease-info", methods=["GET"])
+def crop_disease_info():
+    """GET /crop-disease-info returns loaded CNN model metadata, resolution, and supported crops."""
+    service = get_crop_disease_service()
+    return jsonify({
+        "model_name": "crop_disease_model",
+        "architecture": "EfficientNet-B2 (PyTorch CNN)",
+        "is_loaded": service.is_loaded,
+        "input_resolution": f"{service.image_size}x{service.image_size}",
+        "total_classes": len(service.class_names),
+        "supported_crops": service.class_names,
     }), 200
 
 
