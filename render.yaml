@@ -57,4 +57,4 @@ services:
     region: oregon
     branch: integration
     buildCommand: ""
-    publishDir: "."
+    staticPublishPath: .
