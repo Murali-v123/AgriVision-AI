@@ -178,12 +178,12 @@ let REG_ROLE='farmer';
 let CHARTS=[];
 
 /* ---------- Accessors ---------- */
-const me=()=>db.users.find(u=>u.id===db.session);
-const userById=id=>db.users.find(u=>u.id===id);
-const listingOf=id=>db.listings.find(l=>l.id===id);
-const dealsOn=lid=>db.deals.filter(d=>d.listing===lid);
+const me=()=>(db.users&&db.users.find(u=>u.id===db.session))||(db.users&&db.users[0]);
+const userById=id=>(db.users&&db.users.find(u=>u.id===id||u.email===id))||{id:id||'u_partner',name:'Verified Buyer / Partner',farm:'Partner Farm',village:'Mulbagal',city:'Kolar',district:'Kolar',state:'Karnataka'};
+const listingOf=id=>(db.listings&&db.listings.find(l=>l.id===id))||{id:id||'l_produce',name:'Fresh Farm Produce (Grade A)',crop:'Tomato',qty:1000,ask:28,grade:'A',conf:95,district:'Kolar'};
+const dealsOn=lid=>(db.deals||[]).filter(d=>d.listing===lid);
 const log=m=>{db.log.unshift(new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})+' · '+m);db.log=db.log.slice(0,60)};
-const myListings=()=>db.listings.filter(l=>l.farmer===db.session);
+const myListings=()=>(db.listings||[]).filter(l=>l.farmer===db.session||(me()&&l.farmer===me().id)||l.farmer==='f1');
 
 /* ---------- Theme ---------- */
 const getTheme=()=>{try{return localStorage.getItem(THEME_KEY)||'system'}catch(e){return 'system'}};

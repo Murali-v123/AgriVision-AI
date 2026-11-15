@@ -3,4 +3,5 @@ from .views import QualityAssessmentView
 
 urlpatterns = [
     path('quality-assessment/', QualityAssessmentView.as_view(), name='ai-quality-assessment'),
+    path('assess-quality/', QualityAssessmentView.as_view(), name='ai-assess-quality'),
 ]

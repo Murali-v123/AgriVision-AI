@@ -43,12 +43,12 @@ class BidSerializer(serializers.ModelSerializer):
 
 
 class BidCreateSerializer(serializers.Serializer):
-    listing_id = serializers.CharField(max_length=100)
+    listing_id = serializers.CharField()
     offered_price = serializers.FloatField(min_value=0.01)
     quantity = serializers.FloatField(min_value=0.01)
     message = serializers.CharField(required=False, allow_blank=True, default='')
     delivery_preference = serializers.CharField(required=False, allow_blank=True, default='')
-    buyer_id = serializers.CharField(max_length=100, required=False)  # When farmer initiates offer to a buyer
+    buyer_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
 class CounterOfferSerializer(serializers.Serializer):

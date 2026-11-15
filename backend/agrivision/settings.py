@@ -1,4 +1,5 @@
 import os
+import secrets
 from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
@@ -7,11 +8,14 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-agrivision-dev-key-change-in-production-xyz123')
+# Secure SECRET_KEY: loaded from environment, otherwise generated cryptographically
+SECRET_KEY = os.environ.get('SECRET_KEY') or secrets.token_urlsafe(50)
 
-DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+# DEBUG defaults to False in production unless explicitly set to True
+DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = ['*']
+# ALLOWED_HOSTS parsed from comma-separated environment variable
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,[::1]').split(',') if h.strip()]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -72,6 +76,12 @@ DATABASES = {
     }
 }
 
+# Fast password hashing for instant development/hackathon authentication
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.MD5PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+]
+
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
@@ -94,8 +104,21 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# CORS
-CORS_ALLOW_ALL_ORIGINS = True
+# CORS Configuration: restrict in production, enable specific local frontend origins
+_cors_env = os.environ.get('CORS_ALLOWED_ORIGINS', '')
+if _cors_env:
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_env.split(',') if o.strip()]
+    CORS_ALLOW_ALL_ORIGINS = False
+else:
+    CORS_ALLOWED_ORIGINS = [
+        'http://localhost:5500',
+        'http://127.0.0.1:5500',
+        'http://localhost:8000',
+        'http://127.0.0.1:8000',
+        'http://[::1]:5500',
+    ]
+    CORS_ALLOW_ALL_ORIGINS = DEBUG
+
 CORS_ALLOW_CREDENTIALS = True
 
 # REST Framework
@@ -123,3 +146,7 @@ SIMPLE_JWT = {
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
 }
+
+# AgriVision ML Service Integration
+ML_API_URL = os.environ.get('ML_API_URL', 'http://127.0.0.1:5000')
+

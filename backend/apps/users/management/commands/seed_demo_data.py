@@ -1,3 +1,4 @@
+import os
 import datetime
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -6,6 +7,11 @@ from apps.products.models import ProductListing, QualityAssessment
 from apps.bids.models import Bid
 from apps.orders.models import Order
 from apps.market.models import MarketPrice
+
+# Configurable demo credentials (can be overridden via environment variables in production)
+ADMIN_DEMO_PASS = os.environ.get('DEMO_ADMIN_PASSWORD', 'admin123')
+FARMER_DEMO_PASS = os.environ.get('DEMO_FARMER_PASSWORD', 'farmer123')
+BUYER_DEMO_PASS = os.environ.get('DEMO_BUYER_PASSWORD', 'buyer123')
 
 
 class Command(BaseCommand):
@@ -49,7 +55,7 @@ class Command(BaseCommand):
                     'is_superuser': True,
                 }
             )
-            admin_user.set_password('admin123')
+            admin_user.set_password(ADMIN_DEMO_PASS)
             admin_user.save()
 
             # 2. Farmers
@@ -78,7 +84,7 @@ class Command(BaseCommand):
                         'account_status': 'active',
                     }
                 )
-                u.set_password('farmer123')
+                u.set_password(FARMER_DEMO_PASS)
                 u.is_verified = ver
                 u.save()
 
@@ -125,7 +131,7 @@ class Command(BaseCommand):
                         'account_status': 'active',
                     }
                 )
-                u.set_password('buyer123')
+                u.set_password(BUYER_DEMO_PASS)
                 u.is_verified = ver
                 u.save()
 

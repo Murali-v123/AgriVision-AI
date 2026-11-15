@@ -1,0 +1,45 @@
+{
+  "model_type": "Random Forest Classifier (7-Day Demand Pressure Trend)",
+  "accuracy": 0.4909,
+  "classes": [
+    "Decreasing",
+    "Increasing",
+    "Stable"
+  ],
+  "classification_report": {
+    "Decreasing": {
+      "precision": 0.5641025641025641,
+      "recall": 0.8020833333333334,
+      "f1-score": 0.6623655913978495,
+      "support": 384.0
+    },
+    "Increasing": {
+      "precision": 0.3727598566308244,
+      "recall": 0.4663677130044843,
+      "f1-score": 0.41434262948207173,
+      "support": 223.0
+    },
+    "Stable": {
+      "precision": 0.3684210526315789,
+      "recall": 0.07636363636363637,
+      "f1-score": 0.12650602409638553,
+      "support": 275.0
+    },
+    "accuracy": 0.4909297052154195,
+    "macro avg": {
+      "precision": 0.4350944911216558,
+      "recall": 0.44827156090048476,
+      "f1-score": 0.40107141499210225,
+      "support": 882.0
+    },
+    "weighted avg": {
+      "precision": 0.45471272348950414,
+      "recall": 0.4909297052154195,
+      "f1-score": 0.43258044228773496,
+      "support": 882.0
+    }
+  },
+  "train_samples": 3504,
+  "test_samples": 882,
+  "limitation_statement": "Agricultural Market Proxy Notice: APMC mandi arrivals represent physical wholesale market supply volume, NOT final retail consumer demand. Genuine household consumption data is unavailable in government mandi records. This module computes a Market Absorption & Demand Pressure Index proxy based on arrival velocity, price elasticity, and seasonal clearance rates."
+}
