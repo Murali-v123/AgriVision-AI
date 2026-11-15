@@ -3,7 +3,12 @@
    This file must be loaded AFTER data.js and BEFORE ui.js. */
 
 /* ---------- Constants ---------- */
-const API_BASE = 'http://127.0.0.1:8000/api';
+const IS_LOCAL_ENV = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+// Dynamic API Base: auto-detects localhost vs Render cloud production
+const API_BASE = window.AGRIVISION_API_BASE
+  || localStorage.getItem('agrivision_api_base')
+  || (IS_LOCAL_ENV ? 'http://127.0.0.1:8000/api' : 'https://agrivision-backend.onrender.com/api');
 const TOKEN_KEY = 'av-access-token';
 const REFRESH_KEY = 'av-refresh-token';
 const USER_KEY = 'av-user';

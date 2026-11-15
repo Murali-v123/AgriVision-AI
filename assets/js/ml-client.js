@@ -6,8 +6,15 @@
  * with automatic fallback to Django proxy (http://127.0.0.1:8000/api/market/ml-intelligence/).
  */
 
-const ML_API_BASE = 'http://127.0.0.1:5000';
-const DJANGO_ML_API_BASE = 'http://127.0.0.1:8000/api';
+const IS_LOCAL_HOST = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+const ML_API_BASE = window.AGRIVISION_ML_BASE 
+  || localStorage.getItem('agrivision_ml_base') 
+  || (IS_LOCAL_HOST ? 'http://127.0.0.1:5000' : 'https://agrivision-ml.onrender.com');
+
+const DJANGO_ML_API_BASE = window.AGRIVISION_API_BASE 
+  || localStorage.getItem('agrivision_api_base') 
+  || (IS_LOCAL_HOST ? 'http://127.0.0.1:8000/api' : 'https://agrivision-backend.onrender.com/api');
 
 window.ML_CACHE = {
   isOnline: false,
