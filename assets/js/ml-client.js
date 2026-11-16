@@ -156,6 +156,8 @@ async function fetchMLIntelligence(crop, market, district) {
 // Fetch Model Performance Metrics
 async function fetchMLMetrics() {
   if (window.ML_CACHE.metricsData) return window.ML_CACHE.metricsData;
+  if (window.ML_CACHE.metricsLoading) return null;
+  window.ML_CACHE.metricsLoading = true;
   try {
     const res = await fetch(`${ML_API_BASE}/model-metrics`, { method: 'GET', mode: 'cors' });
     if (res.ok) {
@@ -165,7 +167,10 @@ async function fetchMLMetrics() {
   } catch (err) {
     // Try fallback to Django admin model metrics
     try {
-      const dRes = await fetch(`${DJANGO_ML_API_BASE}/admin/models/`, { method: 'GET', mode: 'cors' });
+      const headers = { 'Content-Type': 'application/json' };
+      const token = typeof localStorage !== 'undefined' && (localStorage.getItem('av-access-token') || localStorage.getItem('token'));
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      const dRes = await fetch(`${DJANGO_ML_API_BASE}/admin/models/`, { method: 'GET', mode: 'cors', headers });
       if (dRes.ok) {
         const d = await dRes.json();
         if (d.price_prediction_model) {
@@ -177,6 +182,9 @@ async function fetchMLMetrics() {
         }
       }
     } catch (e2) {}
+  } finally {
+    window.ML_CACHE.metricsLoading = false;
+    window.ML_CACHE.metricsFetched = true;
   }
   return null;
 }

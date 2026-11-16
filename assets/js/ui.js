@@ -130,6 +130,10 @@ function mountCharts(){
  Chart.defaults.borderColor=C.grid;
  CHARTS.forEach(({id,make})=>{
   const el=document.getElementById(id);if(!el)return;
+  try {
+    const existing = (typeof Chart!=='undefined' && Chart.getChart) ? Chart.getChart(el) : null;
+    if(existing) existing.destroy();
+  } catch(e){}
   try{new Chart(el,make(C))}catch(e){}
  });
 }
@@ -254,15 +258,17 @@ function setPop(p){
 /* ---------- Public: landing page ---------- */
 function publicNav(active){
  return `<header class="public-nav"><div class="in">
-  <a class="brand" href="${BASE}index.html" style="padding:0"><span class="mark">${icon('leaf')}</span><span>AgriVision <span class="ai">AI</span></span></a>
-  <nav class="links" aria-label="Page sections"><a class="hide-s" href="#about">About</a><a class="hide-s" href="#how">How it works</a><a class="hide-s" href="#roles">Who it's for</a><a href="#contact">Contact</a></nav>
-  <div class="seg" role="group" aria-label="Theme">
+  <a class="brand" href="${BASE}index.html" style="padding:0;min-width:0"><span class="mark">${icon('leaf')}</span><span>AgriVision <span class="ai">AI</span></span></a>
+  <nav class="links hide-s" aria-label="Page sections"><a href="#about">About</a><a href="#how">How it works</a><a href="#roles">Who it's for</a><a href="#contact">Contact</a></nav>
+  <div class="seg hide-s" role="group" aria-label="Theme">
    <button data-act="theme" data-t="light" aria-pressed="false">${icon('sun')}<span class="hide-s">Light</span></button>
    <button data-act="theme" data-t="dark" aria-pressed="false">${icon('moon')}<span class="hide-s">Dark</span></button>
    <button data-act="theme" data-t="system" aria-pressed="false">${icon('monitor')}<span class="hide-s">System</span></button>
   </div>
-  <a class="btn o sm" href="${BASE}login.html">Log in</a>
-  <a class="btn p sm" href="${BASE}register.html">Get started</a>
+  <div class="nav-actions">
+   <a class="btn o sm" href="${BASE}login.html">Log in</a>
+   <a class="btn p sm" href="${BASE}register.html">Get started</a>
+  </div>
  </div></header>`;
 }
 function renderLanding(){
@@ -273,7 +279,7 @@ function renderLanding(){
     <p class="eyebrow">Farm-to-market trade for Karnataka</p>
     <h1>Sell your produce at a fair price, backed by a quality check.</h1>
     <p class="lead">AgriVision AI connects farmers directly with retailers, wholesalers and food processors. Photo-based quality grading, mandi price context and transparent bids in one place.</p>
-    <div class="row" style="justify-content:flex-start;margin-top:26px;gap:12px">
+    <div class="row hero-actions" style="justify-content:flex-start;margin-top:26px;gap:12px">
      <a class="btn p lg" href="${BASE}register.html">Create a farmer or buyer account${icon('arrow-right')}</a>
      <a class="btn o lg" href="#how">How it works</a>
     </div>
@@ -326,13 +332,13 @@ function renderLanding(){
    </div>
   </div></section>
 
-  <section class="section" id="contact"><div class="wrap" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:40px;align-items:start">
+  <section class="section" id="contact"><div class="wrap contact-grid">
    <div><p class="eyebrow">Contact</p><h2 class="big">Questions about the platform?</h2><p class="sub">Send a message to the AgriVision team. This prototype stores messages in your browser so the admin view can show them.</p>
     <p class="mut small" style="margin-top:16px">Email: hello@agrivision.example · Phone: 080-0000-0000 (demo)</p></div>
-   <form class="card stack" data-form="contact" novalidate>
-    <div class="form"><div class="field"><label for="cn">Name</label><input id="cn" name="name" required autocomplete="name"></div><div class="field"><label for="ce">Email</label><input id="ce" name="email" type="email" required autocomplete="email"></div></div>
+   <form class="card stack contact-form-card" data-form="contact" novalidate>
+    <div class="form contact-fields"><div class="field"><label for="cn">Name</label><input id="cn" name="name" required autocomplete="name"></div><div class="field"><label for="ce">Email</label><input id="ce" name="email" type="email" required autocomplete="email"></div></div>
     <div class="field"><label for="cm">Message</label><textarea id="cm" name="message" required placeholder="How can we help?"></textarea></div>
-    <div class="row end"><button class="btn p" type="submit">${icon('send')}Send message</button></div>
+    <div class="row end contact-actions"><button class="btn p contact-submit" type="submit">${icon('send')}Send message</button></div>
    </form>
   </div></section>
  </main>

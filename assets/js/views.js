@@ -635,8 +635,8 @@ ADMIN.products=()=>{
  </div>`;
 };
 ADMIN.ai=()=>{
- if(typeof fetchMLMetrics === 'function' && (!window.ML_CACHE || !window.ML_CACHE.metricsData)){
-   fetchMLMetrics().then(()=>{ if(typeof render==='function') render(); });
+ if(typeof fetchMLMetrics === 'function' && !window.ML_CACHE?.metricsFetched && !window.ML_CACHE?.metricsLoading){
+   fetchMLMetrics().then(data=>{ if(data && typeof render==='function') render(); }).catch(()=>{});
  }
  const m = window.ML_CACHE && window.ML_CACHE.metricsData;
  const hasML = !!m;
@@ -649,21 +649,21 @@ ADMIN.ai=()=>{
 
  const g={A:0,B:0,C:0};db.assess.forEach(a=>g[a.grade]++);
  const demo={A:812,B:534,C:215};
- const cfg=C=>({type:'bar',data:{labels:['Grade A','Grade B','Grade C'],datasets:[{label:'Predictions (demo counts + saved sessions)',data:[demo.A+g.A,demo.B+g.B,demo.C+g.C],backgroundColor:[C.ok,C.info,C.warn],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:C.grid}},x:{grid:{display:false}}}}});
+ const cfg=C=>({type:'bar',data:{labels:['Grade A','Grade B','Grade C'],datasets:[{label:'Predictions (demo counts + saved sessions)',data:[demo.A+g.A,demo.B+g.B,demo.C+g.C],backgroundColor:[C.ok,C.info,C.warn],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,animation:{duration:400},plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:C.grid}},x:{grid:{display:false}}}}});
  const total=demo.A+demo.B+demo.C+db.assess.length;
  
  return `${pageHead('AI Model Monitoring & Performance','Health and evaluation metrics of the price intelligence and demand forecasting engine.')}
  <div class="note ok" style="margin-bottom:6px"><b>${hasML ? 'Live Connected' : 'Production Trained Model'}</b> Active models: <b>${modelName}Regressor</b> (Price) & <b>RandomForestClassifier</b> (7-Day Demand Proxy). Tested on 4,386 Karnataka APMC records.</div>
  <div class="grid4">
-  <div class="card stat"><div class="label">Price Champion Model${icon('cpu')}</div><span class="bigval" style="font-size:20px">${modelName}</span><span class="mut small">v1.0.0 (Chronological split)</span></div>
-  <div class="card stat"><div class="label">ML API Status${icon('activity')}</div><span class="bigval ok" style="font-size:20px">${hasML ? 'Operational' : 'Ready'}</span><span class="mut small">${hasML ? 'Connected on :5000' : 'REST Engine'}</span></div>
+  <div class="card stat"><div class="label">Price Champion Model${icon('cpu')}</div><span class="bigval" style="font-size:18px;overflow-wrap:break-word;word-break:break-word">${modelName}</span><span class="mut small">v1.0.0 (Chronological split)</span></div>
+  <div class="card stat"><div class="label">ML API Status${icon('activity')}</div><span class="bigval ok" style="font-size:18px">${hasML ? 'Operational' : 'Ready'}</span><span class="mut small">${hasML ? 'Connected on :5000' : 'REST Engine'}</span></div>
   <div class="card stat"><div class="label">Evaluated Records${icon('scan')}</div><span class="bigval">4,386</span><span class="mut small">${splitSizes.train} train · ${splitSizes.test} test</span></div>
   <div class="card stat"><div class="label">Test MAE${icon('clock')}</div><span class="bigval">${testMae}</span><span class="mut small">MAPE: ${testMape}</span></div>
  </div>
  <div class="grid2">
   <div class="card"><div class="row"><h2 style="margin:0">Quality Prediction distribution</h2><span class="chip outline">Demo</span></div>${chartBox('cPred',cfg,'short','Prediction distribution by grade')}</div>
   <div class="card stack"><h2 style="margin:0">Model Evaluation Benchmarks</h2>
-   <div class="lrow"><span>Champion Price Architecture</span><b>${modelName}Regressor</b></div>
+   <div class="lrow"><span>Champion Price Architecture</span><b style="overflow-wrap:break-word;word-break:break-word">${modelName}Regressor</b></div>
    <div class="lrow"><span>Test Out-of-Sample MAE</span><b>${testMae}</b></div>
    <div class="lrow"><span>Test R² Score</span><b>${testR2}</b></div>
    <div class="lrow"><span>Demand Trend Accuracy</span><b>${demandAcc} (3-class)</b></div>
