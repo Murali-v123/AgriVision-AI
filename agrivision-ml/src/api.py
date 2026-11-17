@@ -303,7 +303,6 @@ def health():
         "supported_crops": ["Tomato"] if not crop_predictor else crop_predictor.class_names[:10] + ["..."],
         "supported_markets": supported_markets_list
     }), (200 if is_ready else 503)
-    }), (200 if is_ready else 503)
 
 
 def build_inference_dataframe(payload: Dict[str, Any]) -> pd.DataFrame:
