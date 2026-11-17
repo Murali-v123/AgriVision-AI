@@ -34,7 +34,7 @@ services:
           property: host
 
   # -------------------------------------------------------------
-  # 2. Flask ML Inference Microservice
+  # 2. Flask ML Inference Microservice  (Price + CNN Crop Model)
   # -------------------------------------------------------------
   - type: web
     name: agrivision-ml
@@ -43,8 +43,24 @@ services:
     region: oregon
     branch: integration
     rootDir: agrivision-ml
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn src.api:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
+    # Build: install deps (torch CPU-only wheel) then unzip the CNN checkpoint
+    buildCommand: >
+      pip install --no-cache-dir -r requirements.txt
+      --extra-index-url https://download.pytorch.org/whl/cpu
+      && python - << 'EOF'
+      import zipfile, os, shutil
+      src = "models/crop_disease_model.pth"
+      if os.path.exists(src):
+          print("CNN model file already present, skipping extraction.")
+      else:
+          for f in ["models/crop_disease_model.pth.zip"]:
+              if os.path.exists(f):
+                  with zipfile.ZipFile(f) as z: z.extractall("models/")
+                  print("Extracted", f)
+                  break
+      EOF
+    # Single gunicorn worker saves RAM on Render free tier; 300s timeout for CNN warmup
+    startCommand: "gunicorn src.api:app --bind 0.0.0.0:$PORT --workers 1 --timeout 300"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9

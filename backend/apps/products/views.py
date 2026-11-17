@@ -1,21 +1,70 @@
+import os
+import io
+import logging
+import requests as _requests
+
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.db.models import Q
+from django.conf import settings
 from PIL import Image
-import io
 
 from .models import ProductListing, QualityAssessment
 from .serializers import ProductListingSerializer, ProductCreateSerializer, QualityAssessmentSerializer
 
+logger = logging.getLogger(__name__)
 
-def assess_produce_image(image_file):
+_ML_API_TIMEOUT = 10  # seconds
+
+
+def _ml_api_base() -> str:
+    """Return Flask ML microservice base URL from settings or env."""
+    return getattr(settings, "ML_API_URL", os.environ.get("ML_API_URL", "http://127.0.0.1:5000")).rstrip("/")
+
+
+def assess_produce_image(image_file, crop: str = "Tomato"):
     """
-    Quality assessment heuristic based on RGB pixel analysis.
-    Labels result clearly as 'pixel_heuristic_demo' to never claim false certification.
+    Quality assessment using the EfficientNet-B2 CNN via the Flask ML microservice.
+    Falls back to RGB pixel heuristic if the ML service is offline.
     """
-    img = Image.open(image_file).convert('RGB').resize((64, 64))
+    # --- Attempt CNN inference via Flask /predict-disease endpoint ---
+    try:
+        image_file.seek(0)
+        image_bytes = image_file.read()
+        image_file.seek(0)
+
+        resp = _requests.post(
+            f"{_ml_api_base()}/predict-disease",
+            files={"file": ("image.jpg", image_bytes, "image/jpeg")},
+            data={"crop": crop},
+            timeout=_ML_API_TIMEOUT,
+        )
+
+        if resp.status_code == 200:
+            cnn = resp.json()
+            if cnn.get("success", False):
+                top5 = cnn.get("top_predictions", [])
+                return {
+                    "grade": cnn.get("quality_grade", "B"),
+                    "confidence": int(round(float(cnn.get("confidence", 75)))),
+                    "details": {
+                        "predicted_crop": cnn.get("predicted_crop", crop),
+                        "is_crop_match": cnn.get("is_crop_match", True),
+                        "diagnosis": cnn.get("diagnosis", ""),
+                        "top_5_predictions": top5,
+                        "cnn_architecture": cnn.get("model_metadata", {}).get("architecture", "EfficientNet-B2"),
+                        "total_trained_classes": cnn.get("model_metadata", {}).get("total_trained_classes", 77),
+                    },
+                    "method": "efficientnet_b2_cnn",
+                }
+    except Exception as exc:
+        logger.warning("Flask ML /predict-disease unreachable, falling back to pixel heuristic: %s", exc)
+
+    # --- Fallback: RGB pixel heuristic ---
+    image_file.seek(0)
+    img = Image.open(image_file).convert("RGB").resize((64, 64))
     pixels = list(img.getdata())
     produce = [(r, g, b) for r, g, b in pixels if r + g + b <= 560]
     if not produce:
@@ -36,20 +85,20 @@ def assess_produce_image(image_file):
     defects = round(dark_count / n * 100)
     brightness = round(mean_L)
 
-    grade = 'A' if uniformity >= 75 and defects <= 8 else 'B' if uniformity >= 50 and defects <= 12 else 'C'
+    grade = "A" if uniformity >= 75 and defects <= 8 else "B" if uniformity >= 50 and defects <= 12 else "C"
     confidence = max(60, min(96, round(uniformity * 0.9 + 8)))
-    ripeness = 'Ripe (stage 4 of 6)' if mean_rg > 100 else 'Turning (stage 3 of 6)' if mean_rg > 40 else 'Green (stage 2 of 6)'
+    ripeness = "Ripe (stage 4 of 6)" if mean_rg > 100 else "Turning (stage 3 of 6)" if mean_rg > 40 else "Green (stage 2 of 6)"
 
     return {
-        'grade': grade,
-        'confidence': confidence,
-        'details': {
-            'uniformity': uniformity,
-            'defects': defects,
-            'brightness': brightness,
-            'ripeness': ripeness,
+        "grade": grade,
+        "confidence": confidence,
+        "details": {
+            "uniformity": uniformity,
+            "defects": defects,
+            "brightness": brightness,
+            "ripeness": ripeness,
         },
-        'method': 'pixel_heuristic_demo',
+        "method": "pixel_heuristic_demo",
     }
 
 
@@ -207,7 +256,7 @@ class QualityAssessmentView(APIView):
             return Response({'detail': 'Image file size must be less than 10MB.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            result = assess_produce_image(image_file)
+            result = assess_produce_image(image_file, crop=crop)
         except Exception as e:
             return Response({'detail': f'Assessment failed: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 

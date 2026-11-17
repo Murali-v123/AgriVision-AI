@@ -11,3 +11,8 @@ requests>=2.31.0
 shap>=0.44.0
 pytest>=8.0.0
 gunicorn>=21.2.0
+
+# Deep Learning - EfficientNet-B2 Crop CNN
+# CPU-only build keeps Render free-tier compatible (no CUDA needed)
+torch>=2.1.0
+torchvision>=0.16.0

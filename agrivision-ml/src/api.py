@@ -27,6 +27,7 @@ from src.feature_engineering import AgriFeaturePipeline, create_time_features
 from src.price_prediction import PricePredictor
 from src.demand_forecasting import DemandForecaster, DEMAND_LIMITATION_NOTICE
 from src.explainability import AgriExplainer
+from src.crop_disease import CropDiseasePredictor
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ app = Flask(__name__)
 price_predictor: Optional[PricePredictor] = None
 demand_forecaster: Optional[DemandForecaster] = None
 explainer: Optional[AgriExplainer] = None
+crop_predictor: Optional[CropDiseasePredictor] = None
 model_metrics: Dict[str, Any] = {}
 recent_market_cache: Dict[str, Dict[str, Any]] = {}
 supported_markets_list = []
@@ -50,13 +52,39 @@ supported_markets_list = []
 
 def load_artifacts():
     """Loads trained models, preprocessors, and evaluation metrics at application boot."""
-    global price_predictor, demand_forecaster, explainer, model_metrics, recent_market_cache, supported_markets_list
+    global price_predictor, demand_forecaster, explainer, crop_predictor, model_metrics, recent_market_cache, supported_markets_list
     
     price_model_path = os.path.join(MODELS_DIR, "price_model.joblib")
     preproc_path = os.path.join(MODELS_DIR, "price_preprocessor.joblib")
     demand_model_path = os.path.join(MODELS_DIR, "demand_model.joblib")
     price_metrics_path = os.path.join(MODELS_DIR, "price_model_metrics.json")
     demand_metrics_path = os.path.join(MODELS_DIR, "demand_metrics.json")
+    
+    # Locate Crop Disease CNN model checkpoint
+    candidate_paths = [
+        os.path.join(MODELS_DIR, "crop_disease_model.pth"),
+        os.path.join(MODELS_DIR, "crop_disease_model.pth.zip"),
+        os.path.join(os.path.dirname(BASE_DIR), "crop_disease_model.pth"),
+        os.path.join(os.path.dirname(BASE_DIR), "crop_disease_model.pth.zip"),
+    ]
+    crop_model_path = next((p for p in candidate_paths if os.path.exists(p)), None)
+    if crop_model_path:
+        try:
+            crop_predictor = CropDiseasePredictor(crop_model_path)
+            if crop_predictor.is_loaded():
+                logger.info("Crop Disease / Quality CNN loaded successfully from %s", crop_model_path)
+                model_metrics["crop_disease_cnn"] = {
+                    "architecture": crop_predictor.architecture,
+                    "classes_count": len(crop_predictor.class_names),
+                    "input_size": [crop_predictor.image_size, crop_predictor.image_size],
+                    "status": "active"
+                }
+            else:
+                logger.warning("Crop CNN initialized in fallback mode.")
+        except Exception as exc:
+            logger.error("Failed to load Crop CNN model: %s", exc)
+    else:
+        logger.warning("Crop CNN model file not found in %s", MODELS_DIR)
     
     if os.path.exists(price_model_path) and os.path.exists(preproc_path):
         model = joblib.load(price_model_path)
@@ -140,7 +168,9 @@ def index():
                 "GET /model-metrics": "Evaluation metrics (MAE, RMSE, MAPE, R²)",
                 "POST /predict-price": "Predict crop modal price with uncertainty intervals",
                 "POST /forecast-demand": "Forecast short-term demand pressure trend",
-                "POST /explain-price": "Explain price predictions with TreeSHAP & domain insights"
+                "POST /explain-price": "Explain price predictions with TreeSHAP & domain insights",
+                "POST /predict-disease": "EfficientNet-B2 CNN crop identity & quality assessment",
+                "POST /assess-crop": "Alias for /predict-disease"
             }
         }), 200
 
@@ -266,10 +296,13 @@ def health():
         "models_loaded": {
             "price_prediction_model": price_predictor is not None,
             "demand_forecasting_model": demand_forecaster is not None,
-            "explainability_engine": explainer is not None
+            "explainability_engine": explainer is not None,
+            "crop_disease_cnn_model": (crop_predictor is not None and crop_predictor.is_loaded())
         },
-        "supported_crops": ["Tomato"],
+        "cnn_species_count": len(crop_predictor.class_names) if crop_predictor else 0,
+        "supported_crops": ["Tomato"] if not crop_predictor else crop_predictor.class_names[:10] + ["..."],
         "supported_markets": supported_markets_list
+    }), (200 if is_ready else 503)
     }), (200 if is_ready else 503)
 
 
@@ -487,6 +520,58 @@ def get_markets():
             {"market": "Chikkaballapur", "district": "Chikkaballapur"}
         ]
     }), 200
+
+
+@app.route("/predict-disease", methods=["POST"])
+@app.route("/assess-crop", methods=["POST"])
+def predict_crop_disease():
+    """
+    POST /predict-disease or POST /assess-crop
+    Deep Learning CNN inference for crop identity and quality verification.
+    
+    Accepts:
+      - Multipart Form: 'file' or 'image' (binary image upload), 'crop' (claimed crop string)
+      - JSON Body: { 'image': '<base64 data-url or raw string>', 'crop': 'Tomato' }
+    """
+    global crop_predictor
+    if crop_predictor is None:
+        return jsonify({
+            "error": "Crop CNN model is not initialized on server",
+            "method": "efficientnet_b2_cnn"
+        }), 503
+
+    claimed_crop = None
+    image_input = None
+
+    # 1. Handle multipart file upload
+    if request.files:
+        file_obj = request.files.get("file") or request.files.get("image")
+        if file_obj:
+            image_input = file_obj.read()
+        claimed_crop = request.form.get("crop") or request.form.get("claimed_crop")
+
+    # 2. Handle JSON payload (base64 image)
+    if not image_input and request.is_json:
+        payload = request.get_json(silent=True) or {}
+        image_input = payload.get("image") or payload.get("photo") or payload.get("file")
+        claimed_crop = payload.get("crop") or payload.get("claimed_crop")
+
+    # 3. Check for raw data in body
+    if not image_input and request.data:
+        image_input = request.data
+
+    if not image_input:
+        return jsonify({
+            "error": "No image provided. Send a multipart file ('file'/'image') or JSON {'image': '<base64>'}"
+        }), 400
+
+    try:
+        result = crop_predictor.predict(image_input, claimed_crop=claimed_crop)
+        status_code = 200 if result.get("success", True) else 400
+        return jsonify(result), status_code
+    except Exception as exc:
+        logger.error("Error in crop disease prediction endpoint: %s", exc, exc_info=True)
+        return jsonify({"error": f"Prediction failed: {str(exc)}"}), 500
 
 
 # Self-boot helper

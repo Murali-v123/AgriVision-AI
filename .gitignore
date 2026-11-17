@@ -22,6 +22,10 @@ staticfiles/
 .env
 backend/.env
 
-# Temporary zip files
+# Temporary zip files (keep the .pth model, ignore raw zip copies)
 *.zip
 agri.zip
+
+# Large ML model zips at root level (the .pth is tracked in agrivision-ml/models/)
+/crop_disease_model.pth
+/crop_disease_model.pth.zip
